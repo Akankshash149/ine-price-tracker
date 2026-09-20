@@ -5,9 +5,7 @@ function sleep(ms) {
 }
 
 function cleanPrice(rawPrice) {
-    if (!rawPrice) {
-        return null;
-    }
+    if (!rawPrice) return null;
 
     const cleaned = rawPrice
         .replace(/[\u200B-\u200D\uFEFF]/g, "")
@@ -24,44 +22,35 @@ function cleanPrice(rawPrice) {
 }
 
 function extractPriceFromText(text) {
-    if (!text) {
-        return null;
-    }
+    if (!text) return null;
 
-    const cleanedText = text
-        .replace(/[\u200B-\u200D\uFEFF]/g, "");
+    const match = text
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .match(/₹\s*([\d,]+(?:\.\d+)?)/);
 
-    const match = cleanedText.match(
-        /₹\s*([\d,]+(?:\.\d+)?)/
-    );
-
-    if (!match) {
-        return null;
-    }
+    if (!match) return null;
 
     return cleanPrice(match[1]);
 }
 
 function extractStockFromText(text) {
-    if (!text) {
-        return null;
-    }
+    if (!text) return null;
 
-    const cleanedText = text
+    const cleaned = text
         .replace(/[\u200B-\u200D\uFEFF]/g, "")
         .replace(/\s+/g, " ")
         .trim();
 
-    if (/OUT OF STOCK/i.test(cleanedText)) {
+    if (/OUT OF STOCK/i.test(cleaned)) {
         return "OUT OF STOCK";
     }
 
-    const inStockMatch = cleanedText.match(
+    const match = cleaned.match(
         /IN STOCK\s*[·•-]?\s*\d+\s*LEFT/i
     );
 
-    if (inStockMatch) {
-        return inStockMatch[0].trim();
+    if (match) {
+        return match[0].trim();
     }
 
     return null;
@@ -73,7 +62,8 @@ async function scrapeProduct(productUrl) {
         args: [
             "--ignore-certificate-errors",
             "--no-sandbox",
-            "--disable-setuid-sandbox"
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage"
         ]
     });
 
@@ -106,165 +96,246 @@ async function scrapeProduct(productUrl) {
 
         console.log("Price block detected.");
 
-        const revealButton = page.getByRole("button", {
-            name: /reveal price/i
-        }).first();
+        const buttonSelector =
+            'button[aria-label="Reveal price"]';
 
-        if (await revealButton.count() === 0) {
+        if (
+            await page.locator(buttonSelector).count() === 0
+        ) {
             throw new Error(
                 "Reveal Price button was not found."
             );
         }
 
-        console.log(
-            "Button enabled BEFORE hover:",
-            !(await revealButton.isDisabled())
+        /*
+         * First put the mouse somewhere clearly outside
+         * the price area.
+         */
+
+        console.log("Moving mouse outside price area...");
+
+        await page.mouse.move(
+            50,
+            50,
+            {
+                steps: 10
+            }
         );
-
-        console.log("Hovering over price block...");
-
-        await priceBlock.hover({
-            force: true,
-            position: {
-                x: 50,
-                y: 50
-            },
-            timeout: 5000
-        });
-
-        console.log("Hover completed.");
 
         await sleep(500);
 
-        let buttonEnabled =
-            !(await revealButton.isDisabled());
-
-        console.log(
-            "Button enabled AFTER hover:",
-            buttonEnabled
-        );
-
         /*
-         * Second interaction attempt.
-         * This is intentionally short so a failing product
-         * does not block the complete cron job.
+         * Get the real price block coordinates.
          */
 
-        if (!buttonEnabled) {
-            console.log(
-                "Trying direct mouse movement..."
-            );
+        const priceBox =
+            await priceBlock.boundingBox();
 
-            const box =
-                await priceBlock.boundingBox();
-
-            if (box) {
-                await page.mouse.move(
-                    box.x + box.width / 2,
-                    box.y + box.height / 2,
-                    {
-                        steps: 5
-                    }
-                );
-
-                await sleep(500);
-            }
-
-            buttonEnabled =
-                !(await revealButton.isDisabled());
-
-            console.log(
-                "Button enabled AFTER mouse movement:",
-                buttonEnabled
-            );
-        }
-
-        /*
-         * If the store did not enable the button,
-         * fail this attempt immediately.
-         *
-         * The retry mechanism will create the retry logs.
-         */
-
-        if (!buttonEnabled) {
+        if (!priceBox) {
             throw new Error(
-                "Reveal Price button did not become enabled after hover interaction."
+                "Could not determine price block position."
             );
         }
 
-        console.log("Clicking Reveal Price...");
-
-        await revealButton.click({
-            timeout: 5000
+        console.log("Price block position:", {
+            x: Math.round(priceBox.x),
+            y: Math.round(priceBox.y),
+            width: Math.round(priceBox.width),
+            height: Math.round(priceBox.height)
         });
 
-        console.log("Reveal Price clicked.");
+        /*
+         * Move the mouse gradually into the price area.
+         *
+         * This is different from locator.hover().
+         * The store's JavaScript receives actual mouse
+         * movement events.
+         */
+
+        const targetX =
+            priceBox.x + priceBox.width / 2;
+
+        const targetY =
+            priceBox.y + priceBox.height / 2;
 
         console.log(
-            "Waiting for price and stock..."
+            "Performing real mouse movement over price..."
         );
+
+        await page.mouse.move(
+            targetX,
+            targetY,
+            {
+                steps: 30
+            }
+        );
+
+        await sleep(1500);
+
+        /*
+         * Move around slightly inside the price area.
+         * This helps trigger mouseenter/mousemove based
+         * interactions used by the mock store.
+         */
+
+        await page.mouse.move(
+            targetX - 20,
+            targetY - 10,
+            {
+                steps: 10
+            }
+        );
+
+        await sleep(300);
+
+        await page.mouse.move(
+            targetX + 20,
+            targetY + 10,
+            {
+                steps: 10
+            }
+        );
+
+        await sleep(1000);
+
+        /*
+         * Check button state.
+         */
+
+        const buttonState =
+            await page.evaluate(selector => {
+                const button =
+                    document.querySelector(selector);
+
+                if (!button) {
+                    return {
+                        exists: false,
+                        disabled: null
+                    };
+                }
+
+                return {
+                    exists: true,
+                    disabled: button.disabled,
+                    text: button.innerText
+                };
+            }, buttonSelector);
+
+        console.log(
+            "Button state after real mouse movement:",
+            buttonState
+        );
+
+        /*
+         * Now click normally.
+         *
+         * We do NOT remove the disabled attribute.
+         * We want the store's own JavaScript to decide
+         * when the button is ready.
+         */
+
+        if (buttonState.disabled) {
+            console.log(
+                "Button still disabled. Trying one more real hover..."
+            );
+
+            await page.mouse.move(
+                priceBox.x + 10,
+                priceBox.y + 10,
+                {
+                    steps: 15
+                }
+            );
+
+            await sleep(1000);
+        }
+
+        const finalState =
+            await page.evaluate(selector => {
+                const button =
+                    document.querySelector(selector);
+
+                if (!button) {
+                    return {
+                        exists: false,
+                        disabled: null
+                    };
+                }
+
+                return {
+                    exists: true,
+                    disabled: button.disabled
+                };
+            }, buttonSelector);
+
+        console.log(
+            "Final button state:",
+            finalState
+        );
+
+        /*
+         * If the button is enabled, perform a real Playwright
+         * click.
+         */
+
+        if (!finalState.disabled) {
+            console.log("Clicking Reveal Price...");
+
+            await page.locator(buttonSelector).click({
+                timeout: 5000
+            });
+
+            console.log("Reveal Price clicked.");
+        } else {
+            /*
+             * Do not immediately fail.
+             *
+             * The store may reveal the price automatically
+             * after the hover challenge completes.
+             */
+
+            console.log(
+                "Button remains disabled; waiting for price data..."
+            );
+        }
+
+        /*
+         * Wait for valid price + stock.
+         *
+         * IMPORTANT:
+         * Return immediately after valid data appears.
+         * Do not wait for the store's later 429/500 retries.
+         */
 
         const maxWait = 30000;
         const startTime = Date.now();
 
         let lastText = "";
 
-        while (
-            Date.now() - startTime < maxWait
-        ) {
-            const state =
-                await page.evaluate(() => {
-                    const block =
-                        document.querySelector(
-                            ".price-block"
-                        );
+        while (Date.now() - startTime < maxWait) {
+            const state = await page.evaluate(() => {
+                const block =
+                    document.querySelector(".price-block");
 
-                    return {
-                        text:
-                            block?.innerText?.trim() ||
-                            ""
-                    };
-                });
+                return {
+                    text:
+                        block?.innerText?.trim() || ""
+                };
+            });
 
             const price =
-                extractPriceFromText(
-                    state.text
-                );
+                extractPriceFromText(state.text);
 
             const stock =
-                extractStockFromText(
-                    state.text
-                );
-
-            /*
-             * IMPORTANT:
-             * Return immediately when BOTH values are valid.
-             * Do not wait for the store's later retries.
-             */
+                extractStockFromText(state.text);
 
             if (price && stock) {
-                console.log(
-                    "\n=============================="
-                );
-
-                console.log(
-                    "VALID PRICE DATA FOUND"
-                );
-
-                console.log(
-                    "=============================="
-                );
-
-                console.log(
-                    "Price:",
-                    price
-                );
-
-                console.log(
-                    "Stock:",
-                    stock
-                );
-
+                console.log("");
+                console.log("==============================");
+                console.log("VALID PRICE DATA FOUND");
+                console.log("==============================");
+                console.log("Price:", price);
+                console.log("Stock:", stock);
                 console.log(
                     "Returning successful scrape immediately."
                 );
@@ -291,8 +362,7 @@ async function scrapeProduct(productUrl) {
                     )
                 );
 
-                lastText =
-                    state.text;
+                lastText = state.text;
             }
 
             await sleep(250);
@@ -303,22 +373,11 @@ async function scrapeProduct(productUrl) {
         );
 
     } catch (error) {
-
-        console.error(
-            "\n=============================="
-        );
-
-        console.error(
-            "SCRAPING FAILED"
-        );
-
-        console.error(
-            "=============================="
-        );
-
-        console.error(
-            error.message
-        );
+        console.error("");
+        console.error("==============================");
+        console.error("SCRAPING FAILED");
+        console.error("==============================");
+        console.error(error.message);
 
         return {
             success: false,
@@ -346,14 +405,13 @@ async function scrapeWithRetry(
         attempt <= maxAttempts;
         attempt++
     ) {
+        console.log("");
         console.log(
-            "\n================================="
+            "================================="
         );
-
         console.log(
             `SCRAPE ATTEMPT ${attempt}/${maxAttempts}`
         );
-
         console.log(
             "================================="
         );
@@ -362,9 +420,7 @@ async function scrapeWithRetry(
             new Date().toISOString();
 
         const result =
-            await scrapeProduct(
-                productUrl
-            );
+            await scrapeProduct(productUrl);
 
         const finishedAt =
             new Date().toISOString();
@@ -397,9 +453,7 @@ async function scrapeWithRetry(
             error: result.error
         });
 
-        if (
-            attempt < maxAttempts
-        ) {
+        if (attempt < maxAttempts) {
             console.log(
                 "Retrying after 3 seconds..."
             );
