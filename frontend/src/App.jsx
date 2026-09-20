@@ -9,10 +9,7 @@ import {
     Tooltip,
     ResponsiveContainer
 } from "recharts";
-
-
-const API_URL = "http://localhost:5000";
-
+const API_URL = "https://ine-price-tracker-osy9.onrender.com";
 
 function App() {
 
