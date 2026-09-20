@@ -17,8 +17,26 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT =
-    process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000;
+
+
+/*
+========================================
+HELPER: TIMEOUT
+========================================
+*/
+
+function withTimeout(promise, timeoutMs, message) {
+    return Promise.race([
+        promise,
+
+        new Promise((_, reject) => {
+            setTimeout(() => {
+                reject(new Error(message));
+            }, timeoutMs);
+        })
+    ]);
+}
 
 
 /*
@@ -29,8 +47,7 @@ HEALTH CHECK
 
 app.get("/", (req, res) => {
     res.json({
-        message:
-            "INE Price Tracker API is running"
+        message: "INE Price Tracker API is running"
     });
 });
 
@@ -45,36 +62,61 @@ app.get(
     "/api/products",
     async (req, res) => {
         try {
+            console.log("GET /api/products started");
+
+            console.log(
+                "Querying Supabase products table..."
+            );
+
             const {
                 data,
                 error
-            } = await supabase
-                .from("products")
-                .select("*")
-                .order(
-                    "created_at",
-                    {
-                        ascending: false
-                    }
-                );
+            } = await withTimeout(
+                supabase
+                    .from("products")
+                    .select("*")
+                    .order(
+                        "created_at",
+                        {
+                            ascending: false
+                        }
+                    ),
+
+                10000,
+
+                "Supabase products query timed out."
+            );
+
+            console.log(
+                "Supabase products query completed."
+            );
 
             if (error) {
+                console.error(
+                    "Supabase products error:",
+                    error.message
+                );
+
                 return res
                     .status(500)
                     .json({
-                        error:
-                            error.message
+                        error: error.message
                     });
             }
 
             res.json(data);
 
         } catch (error) {
+
+            console.error(
+                "GET /api/products failed:",
+                error.message
+            );
+
             res
                 .status(500)
                 .json({
-                    error:
-                        error.message
+                    error: error.message
                 });
         }
     }
@@ -85,15 +127,12 @@ app.get(
 ========================================
 SEARCH PRODUCTS FROM INE STORE
 ========================================
-
-Example:
-
-GET /api/store/search?q=Vista
 */
 
 app.get(
     "/api/store/search",
     async (req, res) => {
+
         try {
 
             const search =
@@ -118,6 +157,7 @@ app.get(
                 );
 
             if (!result.success) {
+
                 return res
                     .status(502)
                     .json({
@@ -127,12 +167,6 @@ app.get(
                             result.error
                     });
             }
-
-
-            /*
-             * Remove duplicate products
-             * using store product ID.
-             */
 
             const uniqueProducts =
                 Array.from(
@@ -146,13 +180,10 @@ app.get(
                     ).values()
                 );
 
-
             res.json({
                 success: true,
-
                 products:
                     uniqueProducts,
-
                 total:
                     uniqueProducts.length
             });
@@ -198,12 +229,12 @@ app.post(
                 product_url
             } = req.body;
 
-
             if (
                 !id ||
                 !product_name ||
                 !product_url
             ) {
+
                 return res
                     .status(400)
                     .json({
@@ -212,26 +243,31 @@ app.post(
                     });
             }
 
-
-            /*
-             * Check if product already exists.
-             */
+            console.log(
+                `Checking whether product is already tracked: ${product_name}`
+            );
 
             const {
                 data: existingProduct,
                 error:
                     existingError
-            } = await supabase
-                .from("products")
-                .select("*")
-                .eq(
-                    "product_url",
-                    product_url
-                )
-                .maybeSingle();
+            } = await withTimeout(
+                supabase
+                    .from("products")
+                    .select("*")
+                    .eq(
+                        "product_url",
+                        product_url
+                    )
+                    .maybeSingle(),
 
+                10000,
+
+                "Supabase product lookup timed out."
+            );
 
             if (existingError) {
+
                 return res
                     .status(500)
                     .json({
@@ -240,46 +276,37 @@ app.post(
                     });
             }
 
-
             if (existingProduct) {
 
                 return res.json({
                     success: true,
-
-                    alreadyTracked:
-                        true,
-
+                    alreadyTracked: true,
                     product:
                         existingProduct
                 });
             }
 
-
-            /*
-             * Insert product into
-             * tracked products table.
-             */
-
             const {
                 data,
                 error
-            } = await supabase
-                .from("products")
-                .insert({
+            } = await withTimeout(
+                supabase
+                    .from("products")
+                    .insert({
+                        product_name,
+                        product_url,
+                        sku:
+                            sku || null,
+                        category:
+                            category || null
+                    })
+                    .select()
+                    .single(),
 
-                    product_name,
+                10000,
 
-                    product_url,
-
-                    sku:
-                        sku || null,
-
-                    category:
-                        category || null
-                })
-                .select()
-                .single();
-
+                "Supabase product insert timed out."
+            );
 
             if (error) {
 
@@ -291,11 +318,9 @@ app.post(
                     });
             }
 
-
             console.log(
                 `Product tracked: ${product_name}`
             );
-
 
             res.status(201).json({
 
@@ -336,30 +361,53 @@ app.post(
     "/api/products/:id/scrape",
     async (req, res) => {
 
+        console.log(
+            `\nSCRAPE REQUEST RECEIVED FOR PRODUCT ID: ${req.params.id}`
+        );
+
         try {
 
             const productId =
                 req.params.id;
 
+            console.log(
+                "Step 1: Querying Supabase for product..."
+            );
 
             const {
                 data: product,
                 error:
                     productError
-            } = await supabase
-                .from("products")
-                .select("*")
-                .eq(
-                    "id",
-                    productId
-                )
-                .single();
+            } = await withTimeout(
 
+                supabase
+                    .from("products")
+                    .select("*")
+                    .eq(
+                        "id",
+                        productId
+                    )
+                    .single(),
+
+                10000,
+
+                "Supabase product lookup timed out."
+            );
+
+            console.log(
+                "Step 2: Supabase product query completed."
+            );
 
             if (
                 productError ||
                 !product
             ) {
+
+                console.error(
+                    "Product lookup failed:",
+                    productError?.message ||
+                    "Product not found"
+                );
 
                 return res
                     .status(404)
@@ -369,17 +417,26 @@ app.post(
                     });
             }
 
-
             console.log(
-                `Starting scrape for ${product.product_name}`
+                `Step 3: Product found: ${product.product_name}`
             );
 
+            console.log(
+                `Product URL: ${product.product_url}`
+            );
+
+            console.log(
+                "Step 4: Starting scraper..."
+            );
 
             const result =
                 await scrapeWithRetry(
                     product.product_url
                 );
 
+            console.log(
+                "Step 5: Scraper finished."
+            );
 
             /*
              * Save scrape attempts.
@@ -389,6 +446,10 @@ app.post(
                 result.attempts &&
                 result.attempts.length
             ) {
+
+                console.log(
+                    "Step 6: Saving scrape logs..."
+                );
 
                 const logs =
                     result.attempts.map(
@@ -414,16 +475,21 @@ app.post(
                         })
                     );
 
-
                 const {
                     error:
                         logsError
-                } = await supabase
-                    .from(
-                        "scrape_logs"
-                    )
-                    .insert(logs);
+                } = await withTimeout(
 
+                    supabase
+                        .from(
+                            "scrape_logs"
+                        )
+                        .insert(logs),
+
+                    10000,
+
+                    "Supabase scrape logs insert timed out."
+                );
 
                 if (logsError) {
 
@@ -431,42 +497,66 @@ app.post(
                         "Failed to save scrape logs:",
                         logsError.message
                     );
+                } else {
+
+                    console.log(
+                        "Scrape logs saved."
+                    );
                 }
             }
 
 
             /*
-             * Only save price and stock
-             * when scrape succeeds.
+             * Save history only if scrape succeeds.
              */
 
             if (result.success) {
+
+                console.log(
+                    "Step 7: Scrape successful."
+                );
+
+                console.log(
+                    "Saving price history..."
+                );
 
                 const {
                     data:
                         historyData,
                     error:
                         historyError
-                } = await supabase
-                    .from(
-                        "price_history"
-                    )
-                    .insert({
+                } = await withTimeout(
 
-                        product_id:
-                            product.id,
+                    supabase
+                        .from(
+                            "price_history"
+                        )
+                        .insert({
 
-                        price:
-                            result.price,
+                            product_id:
+                                product.id,
 
-                        stock:
-                            result.stock
-                    })
-                    .select()
-                    .single();
+                            price:
+                                result.price,
 
+                            stock:
+                                result.stock
+
+                        })
+                        .select()
+                        .single(),
+
+                    10000,
+
+                    "Supabase price history insert timed out."
+                );
 
                 if (historyError) {
+
+                    console.error(
+                        "Price history error:",
+                        historyError.message
+                    );
 
                     return res
                         .status(500)
@@ -476,6 +566,13 @@ app.post(
                         });
                 }
 
+                console.log(
+                    "Price history saved."
+                );
+
+                console.log(
+                    "Step 8: Sending successful response."
+                );
 
                 return res.json({
 
@@ -499,8 +596,12 @@ app.post(
 
 
             /*
-             * Failed scrape.
+             * Scrape failed.
              */
+
+            console.log(
+                "Scrape failed after retries."
+            );
 
             return res
                 .status(502)
@@ -524,11 +625,14 @@ app.post(
         } catch (error) {
 
             console.error(
-                "Scrape endpoint failed:",
+                "\nSCRAPE ENDPOINT FAILED:"
+            );
+
+            console.error(
                 error.message
             );
 
-            res
+            return res
                 .status(500)
                 .json({
                     success: false,
@@ -546,7 +650,11 @@ CRON AUTHENTICATION
 ========================================
 */
 
-function verifyCronSecret(req, res, next) {
+function verifyCronSecret(
+    req,
+    res,
+    next
+) {
 
     const cronSecret =
         process.env.CRON_SECRET;
@@ -566,10 +674,8 @@ function verifyCronSecret(req, res, next) {
             });
     }
 
-
     const providedSecret =
         req.get("x-cron-secret");
-
 
     if (
         !providedSecret ||
@@ -585,7 +691,6 @@ function verifyCronSecret(req, res, next) {
             });
     }
 
-
     next();
 }
 
@@ -594,12 +699,6 @@ function verifyCronSecret(req, res, next) {
 ========================================
 SCRAPE ALL TRACKED PRODUCTS
 ========================================
-
-This endpoint is protected.
-
-Cron service must send:
-
-x-cron-secret: YOUR_CRON_SECRET
 */
 
 app.post(
@@ -607,15 +706,29 @@ app.post(
     verifyCronSecret,
     async (req, res) => {
 
+        console.log(
+            "\nCRON SCRAPE REQUEST RECEIVED"
+        );
+
         try {
+
+            console.log(
+                "Loading tracked products..."
+            );
 
             const {
                 data: products,
                 error
-            } = await supabase
-                .from("products")
-                .select("*");
+            } = await withTimeout(
 
+                supabase
+                    .from("products")
+                    .select("*"),
+
+                10000,
+
+                "Supabase tracked products query timed out."
+            );
 
             if (error) {
 
@@ -627,9 +740,11 @@ app.post(
                     });
             }
 
+            console.log(
+                `Found ${products.length} tracked products.`
+            );
 
             const results = [];
-
 
             for (
                 const product of
@@ -637,19 +752,13 @@ app.post(
             ) {
 
                 console.log(
-                    `Cron scraping: ${product.product_name}`
+                    `\nCron scraping: ${product.product_name}`
                 );
-
 
                 const result =
                     await scrapeWithRetry(
                         product.product_url
                     );
-
-
-                /*
-                 * Save logs.
-                 */
 
                 if (
                     result.attempts &&
@@ -680,39 +789,45 @@ app.post(
                             })
                         );
 
+                    await withTimeout(
 
-                    await supabase
-                        .from(
-                            "scrape_logs"
-                        )
-                        .insert(logs);
+                        supabase
+                            .from(
+                                "scrape_logs"
+                            )
+                            .insert(logs),
+
+                        10000,
+
+                        "Supabase cron scrape logs insert timed out."
+                    );
                 }
-
-
-                /*
-                 * Save history only
-                 * after successful scrape.
-                 */
 
                 if (result.success) {
 
-                    await supabase
-                        .from(
-                            "price_history"
-                        )
-                        .insert({
+                    await withTimeout(
 
-                            product_id:
-                                product.id,
+                        supabase
+                            .from(
+                                "price_history"
+                            )
+                            .insert({
 
-                            price:
-                                result.price,
+                                product_id:
+                                    product.id,
 
-                            stock:
-                                result.stock
-                        });
+                                price:
+                                    result.price,
+
+                                stock:
+                                    result.stock
+                            }),
+
+                        10000,
+
+                        "Supabase cron price history insert timed out."
+                    );
                 }
-
 
                 results.push({
 
@@ -737,6 +852,9 @@ app.post(
                 });
             }
 
+            console.log(
+                "CRON SCRAPE COMPLETED"
+            );
 
             res.json({
 
@@ -779,22 +897,28 @@ app.get(
             const {
                 data,
                 error
-            } = await supabase
-                .from(
-                    "price_history"
-                )
-                .select("*")
-                .eq(
-                    "product_id",
-                    req.params.id
-                )
-                .order(
-                    "scraped_at",
-                    {
-                        ascending: true
-                    }
-                );
+            } = await withTimeout(
 
+                supabase
+                    .from(
+                        "price_history"
+                    )
+                    .select("*")
+                    .eq(
+                        "product_id",
+                        req.params.id
+                    )
+                    .order(
+                        "scraped_at",
+                        {
+                            ascending: true
+                        }
+                    ),
+
+                10000,
+
+                "Supabase price history query timed out."
+            );
 
             if (error) {
 
@@ -805,7 +929,6 @@ app.get(
                             error.message
                     });
             }
-
 
             res.json(data);
 
@@ -837,22 +960,28 @@ app.get(
             const {
                 data,
                 error
-            } = await supabase
-                .from(
-                    "scrape_logs"
-                )
-                .select("*")
-                .eq(
-                    "product_id",
-                    req.params.id
-                )
-                .order(
-                    "started_at",
-                    {
-                        ascending: false
-                    }
-                );
+            } = await withTimeout(
 
+                supabase
+                    .from(
+                        "scrape_logs"
+                    )
+                    .select("*")
+                    .eq(
+                        "product_id",
+                        req.params.id
+                    )
+                    .order(
+                        "started_at",
+                        {
+                            ascending: false
+                        }
+                    ),
+
+                10000,
+
+                "Supabase scrape logs query timed out."
+            );
 
             if (error) {
 
@@ -863,7 +992,6 @@ app.get(
                             error.message
                     });
             }
-
 
             res.json(data);
 

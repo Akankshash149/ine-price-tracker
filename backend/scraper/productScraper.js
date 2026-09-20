@@ -1,9 +1,7 @@
 const { chromium } = require("playwright");
 
 function sleep(ms) {
-    return new Promise(resolve =>
-        setTimeout(resolve, ms)
-    );
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function cleanPrice(rawPrice) {
@@ -70,180 +68,163 @@ function extractStockFromText(text) {
 }
 
 async function scrapeProduct(productUrl) {
-    const browser =
-        await chromium.launch({
-            headless:
-                process.env.HEADLESS !== "false",
-            args: [
-                "--ignore-certificate-errors"
-            ]
-        });
+    const browser = await chromium.launch({
+        headless: process.env.HEADLESS !== "false",
+        args: [
+            "--ignore-certificate-errors",
+            "--no-sandbox",
+            "--disable-setuid-sandbox"
+        ]
+    });
 
-    const context =
-        await browser.newContext({
-            ignoreHTTPSErrors: true
-        });
+    const context = await browser.newContext({
+        ignoreHTTPSErrors: true,
+        viewport: {
+            width: 1280,
+            height: 900
+        }
+    });
 
-    const page =
-        await context.newPage();
+    const page = await context.newPage();
 
     try {
-        console.log(
-            "Opening:",
-            productUrl
-        );
+        console.log("Opening:", productUrl);
 
-        await page.goto(
-            productUrl,
-            {
-                waitUntil:
-                    "domcontentloaded",
-                timeout: 60000
-            }
-        );
+        await page.goto(productUrl, {
+            waitUntil: "domcontentloaded",
+            timeout: 30000
+        });
 
-        console.log(
-            "Page loaded."
-        );
+        console.log("Page loaded.");
 
-        const priceBlock =
-            page.locator(
-                ".price-block"
-            );
+        const priceBlock = page.locator(".price-block");
 
         await priceBlock.waitFor({
             state: "visible",
-            timeout: 60000
+            timeout: 30000
         });
 
-        console.log(
-            "Price block detected."
-        );
+        console.log("Price block detected.");
 
-        const revealButton =
-            page.getByRole(
-                "button",
-                {
-                    name: /reveal price/i
-                }
-            );
+        const revealButton = page.getByRole("button", {
+            name: /reveal price/i
+        }).first();
 
-        if (
-            await revealButton.count() ===
-            0
-        ) {
+        if (await revealButton.count() === 0) {
             throw new Error(
                 "Reveal Price button was not found."
             );
         }
 
         console.log(
-            "Button count:",
-            await revealButton.count()
-        );
-
-        console.log(
             "Button enabled BEFORE hover:",
             !(await revealButton.isDisabled())
         );
 
-        console.log(
-            "Hovering over price block..."
-        );
+        console.log("Hovering over price block...");
 
-        await priceBlock.hover();
+        await priceBlock.hover({
+            force: true,
+            position: {
+                x: 50,
+                y: 50
+            },
+            timeout: 5000
+        });
 
-        console.log(
-            "Hover completed."
-        );
+        console.log("Hover completed.");
 
-        const buttonWaitStart =
-            Date.now();
+        await sleep(500);
 
         let buttonEnabled =
-            false;
-
-        while (
-            Date.now() -
-                buttonWaitStart <
-            60000
-        ) {
-            try {
-                buttonEnabled =
-                    !(await revealButton.isDisabled());
-
-                if (
-                    buttonEnabled
-                ) {
-                    break;
-                }
-            } catch {}
-
-            await sleep(500);
-        }
+            !(await revealButton.isDisabled());
 
         console.log(
             "Button enabled AFTER hover:",
             buttonEnabled
         );
 
-        if (
-            !buttonEnabled
-        ) {
-            throw new Error(
-                "Reveal Price button did not become enabled after hover."
+        /*
+         * Second interaction attempt.
+         * This is intentionally short so a failing product
+         * does not block the complete cron job.
+         */
+
+        if (!buttonEnabled) {
+            console.log(
+                "Trying direct mouse movement..."
+            );
+
+            const box =
+                await priceBlock.boundingBox();
+
+            if (box) {
+                await page.mouse.move(
+                    box.x + box.width / 2,
+                    box.y + box.height / 2,
+                    {
+                        steps: 5
+                    }
+                );
+
+                await sleep(500);
+            }
+
+            buttonEnabled =
+                !(await revealButton.isDisabled());
+
+            console.log(
+                "Button enabled AFTER mouse movement:",
+                buttonEnabled
             );
         }
 
-        console.log(
-            "Clicking Reveal Price..."
-        );
+        /*
+         * If the store did not enable the button,
+         * fail this attempt immediately.
+         *
+         * The retry mechanism will create the retry logs.
+         */
 
-        await revealButton.click();
+        if (!buttonEnabled) {
+            throw new Error(
+                "Reveal Price button did not become enabled after hover interaction."
+            );
+        }
 
-        console.log(
-            "Reveal Price clicked."
-        );
+        console.log("Clicking Reveal Price...");
+
+        await revealButton.click({
+            timeout: 5000
+        });
+
+        console.log("Reveal Price clicked.");
 
         console.log(
             "Waiting for price and stock..."
         );
 
-        const maxWait =
-            30000;
-
-        const startTime =
-            Date.now();
+        const maxWait = 30000;
+        const startTime = Date.now();
 
         let lastText = "";
 
         while (
-            Date.now() -
-                startTime <
-            maxWait
+            Date.now() - startTime < maxWait
         ) {
             const state =
-                await page.evaluate(
-                    () => {
-                        const block =
-                            document.querySelector(
-                                ".price-block"
-                            );
+                await page.evaluate(() => {
+                    const block =
+                        document.querySelector(
+                            ".price-block"
+                        );
 
-                        if (!block) {
-                            return {
-                                text: ""
-                            };
-                        }
-
-                        return {
-                            text:
-                                block.innerText
-                                    ?.trim() ||
-                                ""
-                        };
-                    }
-                );
+                    return {
+                        text:
+                            block?.innerText?.trim() ||
+                            ""
+                    };
+                });
 
             const price =
                 extractPriceFromText(
@@ -255,10 +236,13 @@ async function scrapeProduct(productUrl) {
                     state.text
                 );
 
-            if (
-                price &&
-                stock
-            ) {
+            /*
+             * IMPORTANT:
+             * Return immediately when BOTH values are valid.
+             * Do not wait for the store's later retries.
+             */
+
+            if (price && stock) {
                 console.log(
                     "\n=============================="
                 );
@@ -286,12 +270,10 @@ async function scrapeProduct(productUrl) {
                 );
 
                 return {
-                    success:
-                        true,
+                    success: true,
                     price,
                     stock,
-                    error:
-                        null,
+                    error: null,
                     scrapedAt:
                         new Date().toISOString()
                 };
@@ -299,8 +281,7 @@ async function scrapeProduct(productUrl) {
 
             if (
                 state.text &&
-                state.text !==
-                    lastText
+                state.text !== lastText
             ) {
                 console.log(
                     "Price status:",
@@ -320,7 +301,9 @@ async function scrapeProduct(productUrl) {
         throw new Error(
             "Timed out waiting for valid price and stock data."
         );
+
     } catch (error) {
+
         console.error(
             "\n=============================="
         );
@@ -338,17 +321,14 @@ async function scrapeProduct(productUrl) {
         );
 
         return {
-            success:
-                false,
-            price:
-                null,
-            stock:
-                null,
-            error:
-                error.message,
+            success: false,
+            price: null,
+            stock: null,
+            error: error.message,
             scrapedAt:
                 new Date().toISOString()
         };
+
     } finally {
         await context.close();
         await browser.close();
@@ -389,26 +369,19 @@ async function scrapeWithRetry(
         const finishedAt =
             new Date().toISOString();
 
-        if (
-            result.success
-        ) {
+        if (result.success) {
             attempts.push({
                 attempt,
-                status:
-                    "success",
+                status: "success",
                 startedAt,
                 finishedAt,
-                error:
-                    null
+                error: null
             });
 
             return {
-                success:
-                    true,
-                price:
-                    result.price,
-                stock:
-                    result.stock,
+                success: true,
+                price: result.price,
+                stock: result.stock,
                 attempts
             };
         }
@@ -416,37 +389,29 @@ async function scrapeWithRetry(
         attempts.push({
             attempt,
             status:
-                attempt <
-                maxAttempts
+                attempt < maxAttempts
                     ? "retried"
                     : "failed",
             startedAt,
             finishedAt,
-            error:
-                result.error
+            error: result.error
         });
 
         if (
-            attempt <
-            maxAttempts
+            attempt < maxAttempts
         ) {
             console.log(
                 "Retrying after 3 seconds..."
             );
 
-            await sleep(
-                3000
-            );
+            await sleep(3000);
         }
     }
 
     return {
-        success:
-            false,
-        price:
-            null,
-        stock:
-            null,
+        success: false,
+        price: null,
+        stock: null,
         attempts
     };
 }
