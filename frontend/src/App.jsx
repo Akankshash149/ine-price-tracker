@@ -6,498 +6,1467 @@ import {
     YAxis,
     CartesianGrid,
     Tooltip,
-    ResponsiveContainer,
+    ResponsiveContainer
 } from "recharts";
-import "./App.css";
 
 const API_URL = "http://localhost:5000";
 
 function App() {
-    const [products, setProducts] = useState([]);
-    const [search, setSearch] = useState("");
-    const [selectedProduct, setSelectedProduct] = useState(null);
 
-    const [history, setHistory] = useState([]);
-    const [logs, setLogs] = useState([]);
+    const [trackedProducts, setTrackedProducts] =
+        useState([]);
 
-    const [loading, setLoading] = useState(false);
-    const [scraping, setScraping] = useState(false);
-    const [error, setError] = useState("");
+    const [selectedProduct, setSelectedProduct] =
+        useState(null);
 
-    useEffect(() => {
-        fetchProducts();
-    }, []);
+    const [history, setHistory] =
+        useState([]);
 
-    async function fetchProducts(searchText = "") {
+    const [logs, setLogs] =
+        useState([]);
+
+    const [search, setSearch] =
+        useState("");
+
+    const [searchResults, setSearchResults] =
+        useState([]);
+
+    const [searching, setSearching] =
+        useState(false);
+
+    const [tracking, setTracking] =
+        useState(null);
+
+    const [loading, setLoading] =
+        useState(false);
+
+    const [message, setMessage] =
+        useState("");
+
+
+    /*
+    ========================================
+    LOAD TRACKED PRODUCTS
+    ========================================
+    */
+
+    async function loadTrackedProducts() {
+
         try {
-            setLoading(true);
-            setError("");
 
-            const response = await fetch(
-                `${API_URL}/api/products?search=${encodeURIComponent(searchText)}`
+            const response =
+                await fetch(
+                    `${API_URL}/api/products`
+                );
+
+            const data =
+                await response.json();
+
+            setTrackedProducts(data);
+
+            /*
+             * Select first product automatically
+             * if nothing is selected.
+             */
+
+            if (
+                data.length > 0 &&
+                !selectedProduct
+            ) {
+                setSelectedProduct(data[0]);
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Failed to load products:",
+                error
             );
 
-            const data = await response.json();
+        }
+    }
+
+
+    /*
+    ========================================
+    LOAD HISTORY
+    ========================================
+    */
+
+    async function loadHistory(
+        productId
+    ) {
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/api/products/${productId}/history`
+                );
+
+            const data =
+                await response.json();
+
+            setHistory(data);
+
+        } catch (error) {
+
+            console.error(
+                "Failed to load history:",
+                error
+            );
+
+        }
+    }
+
+
+    /*
+    ========================================
+    LOAD SCRAPE LOGS
+    ========================================
+    */
+
+    async function loadLogs(
+        productId
+    ) {
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/api/products/${productId}/logs`
+                );
+
+            const data =
+                await response.json();
+
+            setLogs(data);
+
+        } catch (error) {
+
+            console.error(
+                "Failed to load logs:",
+                error
+            );
+
+        }
+    }
+
+
+    /*
+    ========================================
+    SELECT PRODUCT
+    ========================================
+    */
+
+    function selectProduct(product) {
+
+        setSelectedProduct(product);
+
+        loadHistory(product.id);
+
+        loadLogs(product.id);
+    }
+
+
+    /*
+    ========================================
+    INITIAL LOAD
+    ========================================
+    */
+
+    useEffect(() => {
+
+        loadTrackedProducts();
+
+    }, []);
+
+
+    /*
+    ========================================
+    LOAD DATA WHEN PRODUCT CHANGES
+    ========================================
+    */
+
+    useEffect(() => {
+
+        if (selectedProduct) {
+
+            loadHistory(
+                selectedProduct.id
+            );
+
+            loadLogs(
+                selectedProduct.id
+            );
+        }
+
+    }, [selectedProduct]);
+
+
+    /*
+    ========================================
+    SEARCH STORE
+    ========================================
+    */
+
+    async function searchStore() {
+
+        const query =
+            search.trim();
+
+        if (!query) {
+
+            setSearchResults([]);
+
+            return;
+        }
+
+
+        setSearching(true);
+
+        setMessage("");
+
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/api/store/search?q=${encodeURIComponent(query)}`
+                );
+
+
+            const data =
+                await response.json();
+
 
             if (!data.success) {
-                throw new Error(data.error || "Failed to load products");
+
+                throw new Error(
+                    data.error ||
+                    "Search failed"
+                );
             }
 
-            setProducts(data.products);
 
-            if (data.products.length > 0 && !selectedProduct) {
-                selectProduct(data.products[0]);
-            }
-        } catch (err) {
-            setError(err.message);
+            setSearchResults(
+                data.products || []
+            );
+
+        } catch (error) {
+
+            console.error(
+                "Store search failed:",
+                error
+            );
+
+            setMessage(
+                "Unable to search the store."
+            );
+
         } finally {
+
+            setSearching(false);
+        }
+    }
+
+
+    /*
+    ========================================
+    TRACK PRODUCT
+    ========================================
+    */
+
+    async function trackProduct(
+        product
+    ) {
+
+        setTracking(product.id);
+
+        setMessage("");
+
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/api/products/track`,
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify({
+
+                            id:
+                                product.id,
+
+                            product_name:
+                                product.name,
+
+                            brand:
+                                product.brand,
+
+                            category:
+                                product.category,
+
+                            sku:
+                                product.sku,
+
+                            product_url:
+                                `https://demo.inelabteamdev.com/product/${product.id}`
+                        })
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    data.error ||
+                    "Failed to track product"
+                );
+            }
+
+
+            /*
+             * Refresh tracked products.
+             */
+
+            await loadTrackedProducts();
+
+
+            /*
+             * Select newly tracked product.
+             */
+
+            if (data.product) {
+
+                setSelectedProduct(
+                    data.product
+                );
+
+                await loadHistory(
+                    data.product.id
+                );
+
+                await loadLogs(
+                    data.product.id
+                );
+            }
+
+
+            if (
+                data.alreadyTracked
+            ) {
+
+                setMessage(
+                    "This product is already being tracked."
+                );
+
+            } else {
+
+                setMessage(
+                    "Product added to tracking."
+                );
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Track product failed:",
+                error
+            );
+
+            setMessage(
+                error.message
+            );
+
+        } finally {
+
+            setTracking(null);
+        }
+    }
+
+
+    /*
+    ========================================
+    SCRAPE / REFRESH PRICE
+    ========================================
+    */
+
+    async function refreshPrice() {
+
+        if (!selectedProduct) {
+            return;
+        }
+
+
+        setLoading(true);
+
+        setMessage("");
+
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/api/products/${selectedProduct.id}/scrape`,
+                    {
+                        method: "POST"
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    data.error ||
+                    "Scraping failed"
+                );
+            }
+
+
+            /*
+             * Update selected product data
+             * by refreshing DB products.
+             */
+
+            await loadTrackedProducts();
+
+
+            await loadHistory(
+                selectedProduct.id
+            );
+
+            await loadLogs(
+                selectedProduct.id
+            );
+
+
+            setMessage(
+                `Price updated: ₹${Number(
+                    data.price
+                ).toLocaleString("en-IN")}`
+            );
+
+        } catch (error) {
+
+            console.error(
+                "Refresh failed:",
+                error
+            );
+
+            setMessage(
+                `Scrape failed: ${error.message}`
+            );
+
+            await loadLogs(
+                selectedProduct.id
+            );
+
+        } finally {
+
             setLoading(false);
         }
     }
 
-    async function selectProduct(product) {
-        setSelectedProduct(product);
-        setError("");
 
-        await loadHistory(product.id);
-        await loadLogs(product.id);
-    }
+    /*
+    ========================================
+    FORMAT DATE
+    ========================================
+    */
 
-    async function loadHistory(productId) {
-        try {
-            const response = await fetch(
-                `${API_URL}/api/products/${productId}/history`
-            );
+    function formatDate(
+        value
+    ) {
 
-            const data = await response.json();
-
-            if (data.success) {
-                setHistory(data.history);
-            }
-        } catch (err) {
-            console.error("History error:", err);
+        if (!value) {
+            return "-";
         }
+
+        return new Date(
+            value
+        ).toLocaleString(
+            "en-IN"
+        );
     }
 
-    async function loadLogs(productId) {
-        try {
-            const response = await fetch(
-                `${API_URL}/api/products/${productId}/logs`
-            );
 
-            const data = await response.json();
+    /*
+    ========================================
+    LATEST HISTORY
+    ========================================
+    */
 
-            if (data.success) {
-                setLogs(data.logs);
-            }
-        } catch (err) {
-            console.error("Logs error:", err);
-        }
-    }
+    const latestHistory =
+        history.length > 0
+            ? history[
+                history.length - 1
+            ]
+            : null;
 
-    async function scrapeProduct() {
-        if (!selectedProduct) return;
 
-        try {
-            setScraping(true);
-            setError("");
+    /*
+    ========================================
+    CHART DATA
+    ========================================
+    */
 
-            const response = await fetch(
-                `${API_URL}/api/products/${selectedProduct.id}/scrape`,
-                {
-                    method: "POST",
-                }
-            );
+    const chartData =
+        history.map(
+            item => ({
 
-            const data = await response.json();
+                date:
+                    new Date(
+                        item.scraped_at
+                    ).toLocaleTimeString(
+                        "en-IN",
+                        {
+                            hour: "2-digit",
+                            minute: "2-digit"
+                        }
+                    ),
 
-            if (!data.success) {
-                throw new Error(
-                    data.message || data.error || "Scraping failed"
-                );
-            }
+                price:
+                    Number(item.price)
+            })
+        );
 
-            await loadHistory(selectedProduct.id);
-            await loadLogs(selectedProduct.id);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setScraping(false);
-        }
-    }
-
-    function handleSearch(event) {
-        event.preventDefault();
-        fetchProducts(search);
-    }
-
-    const chartData = history.map((item) => ({
-        date: new Date(item.scraped_at).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-        }),
-        price: Number(item.price),
-    }));
 
     return (
-        <div className="app">
 
-            <header className="header">
-                <div>
-                    <h1>INE Price Tracker</h1>
-                    <p>Track product prices and availability</p>
-                </div>
-            </header>
+        <div
+            style={{
+                minHeight: "100vh",
+                background: "#f5f7fb",
+                padding: "30px",
+                fontFamily:
+                    "Arial, sans-serif"
+            }}
+        >
 
-            <main className="container">
+            <div
+                style={{
+                    maxWidth: "1200px",
+                    margin: "0 auto"
+                }}
+            >
 
-                {/* Search */}
-                <section className="search-section">
-                    <form onSubmit={handleSearch} className="search-form">
+                {/* HEADER */}
+
+                <h1>
+                    INE Price Tracker
+                </h1>
+
+                <p
+                    style={{
+                        color: "#666"
+                    }}
+                >
+                    Search products from the
+                    INE mock store and track
+                    their prices.
+                </p>
+
+
+                {/* SEARCH */}
+
+                <div
+                    style={{
+                        background: "white",
+                        padding: "20px",
+                        borderRadius: "10px",
+                        marginBottom: "25px"
+                    }}
+                >
+
+                    <h2>
+                        Search Store
+                    </h2>
+
+
+                    <div
+                        style={{
+                            display: "flex",
+                            gap: "10px"
+                        }}
+                    >
 
                         <input
-                            type="text"
-                            placeholder="Search product by name..."
                             value={search}
-                            onChange={(event) =>
-                                setSearch(event.target.value)
+                            onChange={event =>
+                                setSearch(
+                                    event.target.value
+                                )
                             }
+                            onKeyDown={event => {
+
+                                if (
+                                    event.key ===
+                                    "Enter"
+                                ) {
+                                    searchStore();
+                                }
+
+                            }}
+                            placeholder="Search product name..."
+                            style={{
+                                flex: 1,
+                                padding: "12px",
+                                border:
+                                    "1px solid #ccc",
+                                borderRadius:
+                                    "6px",
+                                fontSize:
+                                    "16px"
+                            }}
                         />
 
-                        <button type="submit">
-                            Search
+
+                        <button
+                            onClick={
+                                searchStore
+                            }
+                            disabled={searching}
+                            style={{
+                                padding:
+                                    "12px 20px",
+                                cursor:
+                                    "pointer"
+                            }}
+                        >
+                            {searching
+                                ? "Searching..."
+                                : "Search"}
                         </button>
 
-                    </form>
-                </section>
-
-
-                {/* Error */}
-                {error && (
-                    <div className="error">
-                        {error}
                     </div>
+
+
+                    {/* SEARCH RESULTS */}
+
+                    {searchResults.length >
+                        0 && (
+
+                        <div
+                            style={{
+                                marginTop:
+                                    "20px"
+                            }}
+                        >
+
+                            <h3>
+                                Search Results
+                            </h3>
+
+
+                            {searchResults.map(
+                                product => (
+
+                                    <div
+                                        key={
+                                            product.id
+                                        }
+                                        style={{
+                                            border:
+                                                "1px solid #ddd",
+                                            padding:
+                                                "15px",
+                                            borderRadius:
+                                                "8px",
+                                            marginBottom:
+                                                "10px",
+                                            display:
+                                                "flex",
+                                            justifyContent:
+                                                "space-between",
+                                            alignItems:
+                                                "center"
+                                        }}
+                                    >
+
+                                        <div>
+
+                                            <strong>
+                                                {
+                                                    product.name
+                                                }
+                                            </strong>
+
+                                            <div
+                                                style={{
+                                                    color:
+                                                        "#666",
+                                                    marginTop:
+                                                        "5px"
+                                                }}
+                                            >
+                                                {
+                                                    product.category
+                                                }
+                                                {" · "}
+                                                SKU:{" "}
+                                                {
+                                                    product.sku
+                                                }
+                                            </div>
+
+                                            <div
+                                                style={{
+                                                    fontSize:
+                                                        "13px",
+                                                    color:
+                                                        "#888"
+                                                }}
+                                            >
+                                                Brand:{" "}
+                                                {
+                                                    product.brand
+                                                }
+                                            </div>
+
+                                        </div>
+
+
+                                        <button
+                                            onClick={() =>
+                                                trackProduct(
+                                                    product
+                                                )
+                                            }
+                                            disabled={
+                                                tracking ===
+                                                product.id
+                                            }
+                                            style={{
+                                                padding:
+                                                    "9px 15px",
+                                                cursor:
+                                                    "pointer"
+                                            }}
+                                        >
+                                            {tracking ===
+                                            product.id
+                                                ? "Adding..."
+                                                : "Track Product"}
+                                        </button>
+
+                                    </div>
+
+                                )
+                            )}
+
+                        </div>
+
+                    )}
+
+
+                    {search &&
+                        !searching &&
+                        searchResults.length ===
+                            0 && (
+
+                        <p
+                            style={{
+                                color:
+                                    "#777",
+                                marginTop:
+                                    "15px"
+                            }}
+                        >
+                            No products found.
+                        </p>
+                    )}
+
+                </div>
+
+
+                {/* MESSAGE */}
+
+                {message && (
+
+                    <div
+                        style={{
+                            background:
+                                "#e8f4ff",
+                            padding:
+                                "12px",
+                            borderRadius:
+                                "6px",
+                            marginBottom:
+                                "20px"
+                        }}
+                    >
+                        {message}
+                    </div>
+
                 )}
 
 
-                {/* Products */}
-                <section className="products-section">
+                {/* MAIN CONTENT */}
 
-                    <h2>Products</h2>
+                <div
+                    style={{
+                        display:
+                            "grid",
+                        gridTemplateColumns:
+                            "280px 1fr",
+                        gap:
+                            "25px"
+                    }}
+                >
 
-                    {loading ? (
-                        <p>Loading products...</p>
-                    ) : products.length === 0 ? (
-                        <p>No products found.</p>
-                    ) : (
-                        <div className="product-list">
+                    {/* TRACKED PRODUCTS */}
 
-                            {products.map((product) => (
+                    <div
+                        style={{
+                            background:
+                                "white",
+                            padding:
+                                "20px",
+                            borderRadius:
+                                "10px",
+                            height:
+                                "fit-content"
+                        }}
+                    >
 
-                                <button
-                                    key={product.id}
-                                    className={
-                                        selectedProduct?.id === product.id
-                                            ? "product-card selected"
-                                            : "product-card"
+                        <h2>
+                            Tracked Products
+                        </h2>
+
+
+                        {trackedProducts.length ===
+                            0 && (
+
+                            <p
+                                style={{
+                                    color:
+                                        "#777"
+                                }}
+                            >
+                                No products tracked yet.
+                            </p>
+                        )}
+
+
+                        {trackedProducts.map(
+                            product => (
+
+                                <div
+                                    key={
+                                        product.id
                                     }
                                     onClick={() =>
-                                        selectProduct(product)
+                                        selectProduct(
+                                            product
+                                        )
                                     }
+                                    style={{
+                                        padding:
+                                            "12px",
+                                        marginBottom:
+                                            "8px",
+                                        border:
+                                            selectedProduct?.id ===
+                                            product.id
+                                                ? "2px solid #333"
+                                                : "1px solid #ddd",
+                                        borderRadius:
+                                            "7px",
+                                        cursor:
+                                            "pointer"
+                                    }}
                                 >
 
                                     <strong>
-                                        {product.product_name}
+                                        {
+                                            product.product_name
+                                        }
                                     </strong>
 
-                                    <span>
-                                        {product.category}
-                                    </span>
+                                    <div
+                                        style={{
+                                            color:
+                                                "#777",
+                                            fontSize:
+                                                "13px",
+                                            marginTop:
+                                                "4px"
+                                        }}
+                                    >
+                                        {
+                                            product.category
+                                        }
+                                        {" · "}
+                                        {
+                                            product.sku
+                                        }
+                                    </div>
 
-                                    <small>
-                                        SKU: {product.sku || "N/A"}
-                                    </small>
+                                </div>
 
-                                </button>
+                            )
+                        )}
 
-                            ))}
-
-                        </div>
-                    )}
-
-                </section>
+                    </div>
 
 
-                {/* Dashboard */}
-                {selectedProduct && (
+                    {/* PRODUCT DETAILS */}
 
-                    <section className="dashboard">
+                    <div>
 
-                        {/* Product Header */}
-                        <div className="product-header">
+                        {!selectedProduct ? (
 
-                            <div>
-                                <h2>
-                                    {selectedProduct.product_name}
-                                </h2>
-
-                                <p>
-                                    {selectedProduct.category} ·{" "}
-                                    {selectedProduct.sku}
-                                </p>
+                            <div
+                                style={{
+                                    background:
+                                        "white",
+                                    padding:
+                                        "30px",
+                                    borderRadius:
+                                        "10px"
+                                }}
+                            >
+                                Select a tracked
+                                product to view
+                                details.
                             </div>
 
-                            <button
-                                className="scrape-button"
-                                onClick={scrapeProduct}
-                                disabled={scraping}
-                            >
-                                {scraping
-                                    ? "Scraping..."
-                                    : "Refresh Price"}
-                            </button>
+                        ) : (
 
-                        </div>
+                            <>
 
+                                {/* PRODUCT INFO */}
 
-                        {/* Current Price */}
-                        <div className="current-card">
-
-                            <h3>Latest Price</h3>
-
-                            {history.length > 0 ? (
-                                <>
-                                    <div className="price">
-                                        ₹
-                                        {Number(
-                                            history[history.length - 1].price
-                                        ).toLocaleString("en-IN")}
-                                    </div>
-
-                                    <div className="stock">
-                                        {history[history.length - 1].stock}
-                                    </div>
-
-                                    <small>
-                                        Last updated:{" "}
-                                        {new Date(
-                                            history[history.length - 1]
-                                                .scraped_at
-                                        ).toLocaleString()}
-                                    </small>
-                                </>
-                            ) : (
-                                <p>No price data available yet.</p>
-                            )}
-
-                        </div>
-
-
-                        {/* Price Chart */}
-                        <div className="panel">
-
-                            <h3>Price Trend</h3>
-
-                            {chartData.length < 2 ? (
-                                <p>
-                                    At least two price records are needed
-                                    to display the price trend.
-                                </p>
-                            ) : (
                                 <div
                                     style={{
-                                        width: "100%",
-                                        height: 320,
+                                        background:
+                                            "white",
+                                        padding:
+                                            "25px",
+                                        borderRadius:
+                                            "10px",
+                                        marginBottom:
+                                            "20px"
                                     }}
                                 >
-                                    <ResponsiveContainer
-                                        width="100%"
-                                        height="100%"
+
+                                    <h2>
+                                        {
+                                            selectedProduct.product_name
+                                        }
+                                    </h2>
+
+                                    <p>
+                                        Category:{" "}
+                                        {
+                                            selectedProduct.category
+                                        }
+                                    </p>
+
+                                    <p>
+                                        SKU:{" "}
+                                        {
+                                            selectedProduct.sku
+                                        }
+                                    </p>
+
+
+                                    <button
+                                        onClick={
+                                            refreshPrice
+                                        }
+                                        disabled={
+                                            loading
+                                        }
+                                        style={{
+                                            padding:
+                                                "12px 20px",
+                                            cursor:
+                                                "pointer"
+                                        }}
                                     >
-                                        <LineChart
-                                            data={chartData}
-                                            margin={{
-                                                top: 10,
-                                                right: 20,
-                                                left: 10,
-                                                bottom: 10,
+                                        {loading
+                                            ? "Scraping..."
+                                            : "Refresh Price"}
+                                    </button>
+
+                                </div>
+
+
+                                {/* CURRENT PRICE */}
+
+                                <div
+                                    style={{
+                                        display:
+                                            "grid",
+                                        gridTemplateColumns:
+                                            "1fr 1fr",
+                                        gap:
+                                            "20px",
+                                        marginBottom:
+                                            "20px"
+                                    }}
+                                >
+
+                                    <div
+                                        style={{
+                                            background:
+                                                "white",
+                                            padding:
+                                                "20px",
+                                            borderRadius:
+                                                "10px"
+                                        }}
+                                    >
+
+                                        <h3>
+                                            Latest Price
+                                        </h3>
+
+                                        <div
+                                            style={{
+                                                fontSize:
+                                                    "28px",
+                                                fontWeight:
+                                                    "bold"
                                             }}
                                         >
+                                            {latestHistory
+                                                ? `₹${Number(
+                                                    latestHistory.price
+                                                ).toLocaleString(
+                                                    "en-IN"
+                                                )}`
+                                                : "No data"}
+                                        </div>
 
-                                            <CartesianGrid
-                                                strokeDasharray="3 3"
-                                            />
+                                    </div>
 
-                                            <XAxis dataKey="date" />
 
-                                            <YAxis
-                                                tickFormatter={(value) =>
-                                                    `₹${value.toLocaleString(
-                                                        "en-IN"
-                                                    )}`
-                                                }
-                                            />
+                                    <div
+                                        style={{
+                                            background:
+                                                "white",
+                                            padding:
+                                                "20px",
+                                            borderRadius:
+                                                "10px"
+                                        }}
+                                    >
 
-                                            <Tooltip
-                                                formatter={(value) =>
-                                                    `₹${Number(
-                                                        value
-                                                    ).toLocaleString(
-                                                        "en-IN"
-                                                    )}`
-                                                }
-                                            />
+                                        <h3>
+                                            Stock
+                                        </h3>
 
-                                            <Line
-                                                type="monotone"
-                                                dataKey="price"
-                                                strokeWidth={3}
-                                                dot={{ r: 5 }}
-                                                activeDot={{ r: 7 }}
-                                            />
+                                        <div
+                                            style={{
+                                                fontSize:
+                                                    "20px",
+                                                fontWeight:
+                                                    "bold"
+                                            }}
+                                        >
+                                            {latestHistory
+                                                ? latestHistory.stock
+                                                : "No data"}
+                                        </div>
 
-                                        </LineChart>
-                                    </ResponsiveContainer>
+                                    </div>
+
                                 </div>
-                            )}
-
-                        </div>
 
 
-                        {/* Price History Table */}
-                        <div className="panel">
+                                {/* CHART */}
 
-                            <h3>Price History</h3>
+                                <div
+                                    style={{
+                                        background:
+                                            "white",
+                                        padding:
+                                            "20px",
+                                        borderRadius:
+                                            "10px",
+                                        marginBottom:
+                                            "20px"
+                                    }}
+                                >
 
-                            {history.length === 0 ? (
-                                <p>No history available.</p>
-                            ) : (
-                                <div className="table-wrapper">
+                                    <h2>
+                                        Price Trend
+                                    </h2>
 
-                                    <table>
+
+                                    {chartData.length >
+                                    0 ? (
+
+                                        <ResponsiveContainer
+                                            width="100%"
+                                            height={
+                                                300
+                                            }
+                                        >
+
+                                            <LineChart
+                                                data={
+                                                    chartData
+                                                }
+                                            >
+
+                                                <CartesianGrid
+                                                    strokeDasharray="3 3"
+                                                />
+
+                                                <XAxis
+                                                    dataKey="date"
+                                                />
+
+                                                <YAxis />
+
+                                                <Tooltip />
+
+                                                <Line
+                                                    type="monotone"
+                                                    dataKey="price"
+                                                    stroke="#2563eb"
+                                                    strokeWidth={
+                                                        2
+                                                    }
+                                                />
+
+                                            </LineChart>
+
+                                        </ResponsiveContainer>
+
+                                    ) : (
+
+                                        <p>
+                                            No price
+                                            history yet.
+                                        </p>
+                                    )}
+
+                                </div>
+
+
+                                {/* HISTORY TABLE */}
+
+                                <div
+                                    style={{
+                                        background:
+                                            "white",
+                                        padding:
+                                            "20px",
+                                        borderRadius:
+                                            "10px",
+                                        marginBottom:
+                                            "20px"
+                                    }}
+                                >
+
+                                    <h2>
+                                        Price History
+                                    </h2>
+
+
+                                    <table
+                                        style={{
+                                            width:
+                                                "100%",
+                                            borderCollapse:
+                                                "collapse"
+                                        }}
+                                    >
 
                                         <thead>
+
                                             <tr>
-                                                <th>Date & Time</th>
-                                                <th>Price</th>
-                                                <th>Stock</th>
+
+                                                <th
+                                                    style={{
+                                                        textAlign:
+                                                            "left",
+                                                        padding:
+                                                            "10px"
+                                                    }}
+                                                >
+                                                    Time
+                                                </th>
+
+                                                <th
+                                                    style={{
+                                                        textAlign:
+                                                            "left",
+                                                        padding:
+                                                            "10px"
+                                                    }}
+                                                >
+                                                    Price
+                                                </th>
+
+                                                <th
+                                                    style={{
+                                                        textAlign:
+                                                            "left",
+                                                        padding:
+                                                            "10px"
+                                                    }}
+                                                >
+                                                    Stock
+                                                </th>
+
                                             </tr>
+
                                         </thead>
+
 
                                         <tbody>
 
-                                            {history.map((item) => (
+                                            {history.map(
+                                                item => (
 
-                                                <tr key={item.id}>
+                                                    <tr
+                                                        key={
+                                                            item.id
+                                                        }
+                                                    >
 
-                                                    <td>
-                                                        {new Date(
-                                                            item.scraped_at
-                                                        ).toLocaleString()}
-                                                    </td>
-
-                                                    <td>
-                                                        ₹
-                                                        {Number(
-                                                            item.price
-                                                        ).toLocaleString(
-                                                            "en-IN"
-                                                        )}
-                                                    </td>
-
-                                                    <td>
-                                                        {item.stock}
-                                                    </td>
-
-                                                </tr>
-
-                                            ))}
-
-                                        </tbody>
-
-                                    </table>
-
-                                </div>
-                            )}
-
-                        </div>
-
-
-                        {/* Scrape Logs */}
-                        <div className="panel">
-
-                            <h3>Scrape Logs</h3>
-
-                            {logs.length === 0 ? (
-                                <p>No scrape attempts yet.</p>
-                            ) : (
-                                <div className="table-wrapper">
-
-                                    <table>
-
-                                        <thead>
-                                            <tr>
-                                                <th>Attempt</th>
-                                                <th>Status</th>
-                                                <th>Started</th>
-                                                <th>Finished</th>
-                                                <th>Error</th>
-                                            </tr>
-                                        </thead>
-
-                                        <tbody>
-
-                                            {logs.map((log) => (
-
-                                                <tr key={log.id}>
-
-                                                    <td>
-                                                        {log.attempt_number}
-                                                    </td>
-
-                                                    <td>
-                                                        <span
-                                                            className={`status ${log.status}`}
+                                                        <td
+                                                            style={{
+                                                                padding:
+                                                                    "10px",
+                                                                borderTop:
+                                                                    "1px solid #eee"
+                                                            }}
                                                         >
-                                                            {log.status}
-                                                        </span>
-                                                    </td>
+                                                            {
+                                                                formatDate(
+                                                                    item.scraped_at
+                                                                )
+                                                            }
+                                                        </td>
 
-                                                    <td>
-                                                        {new Date(
-                                                            log.started_at
-                                                        ).toLocaleString()}
-                                                    </td>
+                                                        <td
+                                                            style={{
+                                                                padding:
+                                                                    "10px",
+                                                                borderTop:
+                                                                    "1px solid #eee"
+                                                            }}
+                                                        >
+                                                            ₹
+                                                            {Number(
+                                                                item.price
+                                                            ).toLocaleString(
+                                                                "en-IN"
+                                                            )}
+                                                        </td>
 
-                                                    <td>
-                                                        {new Date(
-                                                            log.finished_at
-                                                        ).toLocaleString()}
-                                                    </td>
+                                                        <td
+                                                            style={{
+                                                                padding:
+                                                                    "10px",
+                                                                borderTop:
+                                                                    "1px solid #eee"
+                                                            }}
+                                                        >
+                                                            {
+                                                                item.stock
+                                                            }
+                                                        </td>
 
-                                                    <td>
-                                                        {log.error_message ||
-                                                            "-"}
-                                                    </td>
+                                                    </tr>
 
-                                                </tr>
-
-                                            ))}
+                                                )
+                                            )}
 
                                         </tbody>
 
                                     </table>
 
                                 </div>
-                            )}
 
-                        </div>
 
-                    </section>
+                                {/* SCRAPE LOGS */}
 
-                )}
+                                <div
+                                    style={{
+                                        background:
+                                            "white",
+                                        padding:
+                                            "20px",
+                                        borderRadius:
+                                            "10px"
+                                    }}
+                                >
 
-            </main>
+                                    <h2>
+                                        Scrape Logs
+                                    </h2>
+
+
+                                    <table
+                                        style={{
+                                            width:
+                                                "100%",
+                                            borderCollapse:
+                                                "collapse"
+                                        }}
+                                    >
+
+                                        <thead>
+
+                                            <tr>
+
+                                                <th
+                                                    style={{
+                                                        textAlign:
+                                                            "left",
+                                                        padding:
+                                                            "10px"
+                                                    }}
+                                                >
+                                                    Attempt
+                                                </th>
+
+                                                <th
+                                                    style={{
+                                                        textAlign:
+                                                            "left",
+                                                        padding:
+                                                            "10px"
+                                                    }}
+                                                >
+                                                    Status
+                                                </th>
+
+                                                <th
+                                                    style={{
+                                                        textAlign:
+                                                            "left",
+                                                        padding:
+                                                            "10px"
+                                                    }}
+                                                >
+                                                    Time
+                                                </th>
+
+                                                <th
+                                                    style={{
+                                                        textAlign:
+                                                            "left",
+                                                        padding:
+                                                            "10px"
+                                                    }}
+                                                >
+                                                    Error
+                                                </th>
+
+                                            </tr>
+
+                                        </thead>
+
+
+                                        <tbody>
+
+                                            {logs.map(
+                                                log => (
+
+                                                    <tr
+                                                        key={
+                                                            log.id
+                                                        }
+                                                    >
+
+                                                        <td
+                                                            style={{
+                                                                padding:
+                                                                    "10px",
+                                                                borderTop:
+                                                                    "1px solid #eee"
+                                                            }}
+                                                        >
+                                                            {
+                                                                log.attempt_number
+                                                            }
+                                                        </td>
+
+                                                        <td
+                                                            style={{
+                                                                padding:
+                                                                    "10px",
+                                                                borderTop:
+                                                                    "1px solid #eee"
+                                                            }}
+                                                        >
+                                                            {
+                                                                log.status
+                                                            }
+                                                        </td>
+
+                                                        <td
+                                                            style={{
+                                                                padding:
+                                                                    "10px",
+                                                                borderTop:
+                                                                    "1px solid #eee"
+                                                            }}
+                                                        >
+                                                            {
+                                                                formatDate(
+                                                                    log.started_at
+                                                                )
+                                                            }
+                                                        </td>
+
+                                                        <td
+                                                            style={{
+                                                                padding:
+                                                                    "10px",
+                                                                borderTop:
+                                                                    "1px solid #eee"
+                                                            }}
+                                                        >
+                                                            {
+                                                                log.error_message ||
+                                                                "-"
+                                                            }
+                                                        </td>
+
+                                                    </tr>
+
+                                                )
+                                            )}
+
+                                        </tbody>
+
+                                    </table>
+
+                                </div>
+
+                            </>
+
+                        )}
+
+                    </div>
+
+                </div>
+
+            </div>
 
         </div>
     );

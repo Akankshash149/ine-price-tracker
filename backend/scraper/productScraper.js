@@ -1,13 +1,36 @@
 const { chromium } = require("playwright");
 
+
+function cleanPrice(rawPrice) {
+    if (!rawPrice) {
+        return null;
+    }
+
+    const cleaned = rawPrice
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/[^\d.,]/g, "")
+        .replace(/,/g, "");
+
+    const price = Number(cleaned);
+
+    if (!Number.isFinite(price) || price <= 0) {
+        return null;
+    }
+
+    return price;
+}
+
+
 async function scrapeProduct(productUrl) {
+
     const browser = await chromium.launch({
-        headless: false
+        headless: process.env.HEADLESS !== "false"
     });
 
     const page = await browser.newPage();
 
     try {
+
         console.log("Opening:", productUrl);
 
         await page.goto(productUrl, {
@@ -65,46 +88,198 @@ async function scrapeProduct(productUrl) {
 
         console.log("Reveal Price clicked.");
 
-        await page.locator(
-            ".price-block.price-success"
-        ).waitFor({
-            state: "visible",
-            timeout: 30000
-        });
+        console.log("Waiting for final price result...");
 
-        console.log("Price success state detected!");
 
-        const price = await page.locator(
-            ".price-block.price-success .pv-a7"
-        ).innerText();
+        /*
+         * The store can internally retry several times.
+         *
+         * We continuously inspect the DOM, but we use ONE
+         * page.evaluate() call to read the complete current
+         * state atomically.
+         *
+         * As soon as a valid price + stock is found,
+         * we immediately return it.
+         */
 
-        const stock = await page.locator(
-            ".price-block.price-success .stock-badge"
-        ).innerText();
+        const maxWait = 75000;
+        const startTime = Date.now();
 
-        if (!price || !price.trim()) {
-            throw new Error("Price was empty.");
+        while (Date.now() - startTime < maxWait) {
+
+            const state = await page.evaluate(() => {
+
+                const block = document.querySelector(
+                    ".price-block"
+                );
+
+                if (!block) {
+                    return {
+                        type: "waiting",
+                        text: ""
+                    };
+                }
+
+                const successBlock = block.classList.contains(
+                    "price-success"
+                );
+
+                /*
+                 * Read all possible price values.
+                 *
+                 * .pv-a7 is the visible selling price in the
+                 * current successful DOM.
+                 */
+
+                const priceElement =
+                    block.querySelector(".pv-a7");
+
+                const stockElement =
+                    block.querySelector(".stock-badge");
+
+                const price =
+                    priceElement?.textContent?.trim() || null;
+
+                const stock =
+                    stockElement?.textContent?.trim() || null;
+
+                const text =
+                    block.innerText?.trim() || "";
+
+                const status =
+                    block.querySelector(
+                        ".price-status"
+                    )?.textContent?.trim() || "";
+
+                const substatus =
+                    block.querySelector(
+                        ".price-substatus"
+                    )?.textContent?.trim() || "";
+
+                if (
+                    successBlock &&
+                    price &&
+                    stock
+                ) {
+                    return {
+                        type: "success",
+                        price,
+                        stock,
+                        text
+                    };
+                }
+
+                if (
+                    text.toLowerCase().includes(
+                        "couldn’t load"
+                    ) ||
+                    text.toLowerCase().includes(
+                        "couldn't load"
+                    )
+                ) {
+                    return {
+                        type: "failed",
+                        text
+                    };
+                }
+
+                return {
+                    type: "waiting",
+                    status,
+                    substatus,
+                    text
+                };
+            });
+
+
+            /*
+             * SUCCESS
+             *
+             * Immediately return. Do NOT perform another
+             * wait or DOM lookup.
+             */
+
+            if (state.type === "success") {
+
+                console.log("\n==============================");
+                console.log("SCRAPED PRODUCT DATA");
+                console.log("==============================");
+                console.log("URL:", productUrl);
+                console.log("Raw Price:", state.price);
+                console.log("Stock:", state.stock);
+                console.log("==============================");
+
+                const price = cleanPrice(state.price);
+
+                if (!price) {
+                    throw new Error(
+                        "Invalid price received: " +
+                        state.price
+                    );
+                }
+
+                if (!state.stock.trim()) {
+                    throw new Error(
+                        "Stock information was empty."
+                    );
+                }
+
+                return {
+                    success: true,
+                    price: price,
+                    rawPrice: state.price,
+                    stock: state.stock.trim(),
+                    error: null,
+                    scrapedAt: new Date().toISOString()
+                };
+            }
+
+
+            /*
+             * FINAL FAILURE
+             */
+
+            if (state.type === "failed") {
+
+                throw new Error(
+                    "Store failed to load price: " +
+                    state.text.replace(/\n+/g, " ")
+                );
+            }
+
+
+            /*
+             * Show useful status only when there is
+             * meaningful information.
+             */
+
+            if (
+                state.status ||
+                state.substatus
+            ) {
+
+                const statusText = [
+                    state.status,
+                    state.substatus
+                ]
+                    .filter(Boolean)
+                    .join(" | ");
+
+                console.log(
+                    "Current price status:",
+                    statusText
+                );
+            }
+
+
+            await page.waitForTimeout(500);
         }
 
-        if (!stock || !stock.trim()) {
-            throw new Error("Stock information was empty.");
-        }
 
-        console.log("\n==============================");
-        console.log("SCRAPED PRODUCT DATA");
-        console.log("==============================");
-        console.log("URL:", productUrl);
-        console.log("Price:", price);
-        console.log("Stock:", stock);
-        console.log("==============================");
+        throw new Error(
+            "Timed out waiting for the store to return final price data."
+        );
 
-        return {
-            success: true,
-            price: price.trim(),
-            stock: stock.trim(),
-            error: null,
-            scrapedAt: new Date().toISOString()
-        };
 
     } catch (error) {
 
@@ -122,27 +297,44 @@ async function scrapeProduct(productUrl) {
         };
 
     } finally {
+
         await browser.close();
     }
 }
 
 
-// Retry mechanism
-async function scrapeWithRetry(productUrl, maxAttempts = 3) {
+
+async function scrapeWithRetry(
+    productUrl,
+    maxAttempts = 3
+) {
 
     const attempts = [];
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+
+    for (
+        let attempt = 1;
+        attempt <= maxAttempts;
+        attempt++
+    ) {
 
         console.log("\n=================================");
-        console.log(`SCRAPE ATTEMPT ${attempt}/${maxAttempts}`);
+        console.log(
+            `SCRAPE ATTEMPT ${attempt}/${maxAttempts}`
+        );
         console.log("=================================");
 
-        const startedAt = new Date().toISOString();
+        const startedAt =
+            new Date().toISOString();
 
-        const result = await scrapeProduct(productUrl);
 
-        const finishedAt = new Date().toISOString();
+        const result =
+            await scrapeProduct(productUrl);
+
+
+        const finishedAt =
+            new Date().toISOString();
+
 
         if (result.success) {
 
@@ -154,6 +346,7 @@ async function scrapeWithRetry(productUrl, maxAttempts = 3) {
                 error: null
             });
 
+
             return {
                 success: true,
                 price: result.price,
@@ -162,21 +355,31 @@ async function scrapeWithRetry(productUrl, maxAttempts = 3) {
             };
         }
 
-        // Failed attempt
+
         attempts.push({
             attempt,
-            status: attempt < maxAttempts ? "retried" : "failed",
+            status:
+                attempt < maxAttempts
+                    ? "retried"
+                    : "failed",
             startedAt,
             finishedAt,
             error: result.error
         });
 
-        // Wait before next retry
+
         if (attempt < maxAttempts) {
-            console.log("Retrying after 2 seconds...");
-            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            console.log(
+                "Retrying after 2 seconds..."
+            );
+
+            await new Promise(resolve =>
+                setTimeout(resolve, 2000)
+            );
         }
     }
+
 
     return {
         success: false,
