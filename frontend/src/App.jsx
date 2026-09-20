@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+
 import {
     LineChart,
     Line,
@@ -9,7 +10,9 @@ import {
     ResponsiveContainer
 } from "recharts";
 
+
 const API_URL = "http://localhost:5000";
+
 
 function App() {
 
@@ -46,6 +49,22 @@ function App() {
 
     /*
     ========================================
+    GET PRODUCT NAME
+    ========================================
+    */
+
+    function getStoreProductName(product) {
+
+        return (
+            product.name ||
+            product.product_name ||
+            "Unnamed Product"
+        );
+    }
+
+
+    /*
+    ========================================
     LOAD TRACKED PRODUCTS
     ========================================
     */
@@ -59,21 +78,30 @@ function App() {
                     `${API_URL}/api/products`
                 );
 
+
+            if (!response.ok) {
+
+                throw new Error(
+                    "Failed to load tracked products"
+                );
+            }
+
+
             const data =
                 await response.json();
 
+
             setTrackedProducts(data);
 
-            /*
-             * Select first product automatically
-             * if nothing is selected.
-             */
 
             if (
                 data.length > 0 &&
                 !selectedProduct
             ) {
-                setSelectedProduct(data[0]);
+
+                setSelectedProduct(
+                    data[0]
+                );
             }
 
         } catch (error) {
@@ -83,6 +111,9 @@ function App() {
                 error
             );
 
+            setMessage(
+                "Unable to load tracked products."
+            );
         }
     }
 
@@ -104,8 +135,18 @@ function App() {
                     `${API_URL}/api/products/${productId}/history`
                 );
 
+
+            if (!response.ok) {
+
+                throw new Error(
+                    "Failed to load price history"
+                );
+            }
+
+
             const data =
                 await response.json();
+
 
             setHistory(data);
 
@@ -116,6 +157,7 @@ function App() {
                 error
             );
 
+            setHistory([]);
         }
     }
 
@@ -137,8 +179,18 @@ function App() {
                     `${API_URL}/api/products/${productId}/logs`
                 );
 
+
+            if (!response.ok) {
+
+                throw new Error(
+                    "Failed to load scrape logs"
+                );
+            }
+
+
             const data =
                 await response.json();
+
 
             setLogs(data);
 
@@ -149,23 +201,32 @@ function App() {
                 error
             );
 
+            setLogs([]);
         }
     }
 
 
     /*
     ========================================
-    SELECT PRODUCT
+    SELECT TRACKED PRODUCT
     ========================================
     */
 
     function selectProduct(product) {
 
-        setSelectedProduct(product);
+        setSelectedProduct(
+            product
+        );
 
-        loadHistory(product.id);
+        setMessage("");
 
-        loadLogs(product.id);
+        loadHistory(
+            product.id
+        );
+
+        loadLogs(
+            product.id
+        );
     }
 
 
@@ -184,22 +245,24 @@ function App() {
 
     /*
     ========================================
-    LOAD DATA WHEN PRODUCT CHANGES
+    LOAD DATA WHEN SELECTED PRODUCT CHANGES
     ========================================
     */
 
     useEffect(() => {
 
-        if (selectedProduct) {
-
-            loadHistory(
-                selectedProduct.id
-            );
-
-            loadLogs(
-                selectedProduct.id
-            );
+        if (!selectedProduct) {
+            return;
         }
+
+
+        loadHistory(
+            selectedProduct.id
+        );
+
+        loadLogs(
+            selectedProduct.id
+        );
 
     }, [selectedProduct]);
 
@@ -214,6 +277,7 @@ function App() {
 
         const query =
             search.trim();
+
 
         if (!query) {
 
@@ -240,11 +304,20 @@ function App() {
                 await response.json();
 
 
+            if (!response.ok) {
+
+                throw new Error(
+                    data.error ||
+                    "Store search failed"
+                );
+            }
+
+
             if (!data.success) {
 
                 throw new Error(
                     data.error ||
-                    "Search failed"
+                    "Store search failed"
                 );
             }
 
@@ -260,8 +333,10 @@ function App() {
                 error
             );
 
+            setSearchResults([]);
+
             setMessage(
-                "Unable to search the store."
+                `Search failed: ${error.message}`
             );
 
         } finally {
@@ -281,12 +356,26 @@ function App() {
         product
     ) {
 
-        setTracking(product.id);
+        const productName =
+            getStoreProductName(
+                product
+            );
+
+
+        setTracking(
+            product.id
+        );
 
         setMessage("");
 
 
         try {
+
+            console.log(
+                "Tracking product:",
+                product
+            );
+
 
             const response =
                 await fetch(
@@ -305,16 +394,19 @@ function App() {
                                 product.id,
 
                             product_name:
-                                product.name,
+                                productName,
 
                             brand:
-                                product.brand,
+                                product.brand ||
+                                null,
 
                             category:
-                                product.category,
+                                product.category ||
+                                null,
 
                             sku:
-                                product.sku,
+                                product.sku ||
+                                null,
 
                             product_url:
                                 `https://demo.inelabteamdev.com/product/${product.id}`
@@ -327,7 +419,22 @@ function App() {
                 await response.json();
 
 
+            console.log(
+                "Track response:",
+                data
+            );
+
+
             if (!response.ok) {
+
+                throw new Error(
+                    data.error ||
+                    `Server returned ${response.status}`
+                );
+            }
+
+
+            if (!data.success) {
 
                 throw new Error(
                     data.error ||
@@ -344,7 +451,7 @@ function App() {
 
 
             /*
-             * Select newly tracked product.
+             * Select the tracked product.
              */
 
             if (data.product) {
@@ -368,13 +475,13 @@ function App() {
             ) {
 
                 setMessage(
-                    "This product is already being tracked."
+                    `${productName} is already being tracked.`
                 );
 
             } else {
 
                 setMessage(
-                    "Product added to tracking."
+                    `${productName} added to tracked products.`
                 );
             }
 
@@ -386,7 +493,7 @@ function App() {
             );
 
             setMessage(
-                error.message
+                `Could not track product: ${error.message}`
             );
 
         } finally {
@@ -398,7 +505,7 @@ function App() {
 
     /*
     ========================================
-    SCRAPE / REFRESH PRICE
+    REFRESH PRICE
     ========================================
     */
 
@@ -438,13 +545,7 @@ function App() {
             }
 
 
-            /*
-             * Update selected product data
-             * by refreshing DB products.
-             */
-
             await loadTrackedProducts();
-
 
             await loadHistory(
                 selectedProduct.id
@@ -468,9 +569,11 @@ function App() {
                 error
             );
 
+
             setMessage(
                 `Scrape failed: ${error.message}`
             );
+
 
             await loadLogs(
                 selectedProduct.id
@@ -496,6 +599,7 @@ function App() {
         if (!value) {
             return "-";
         }
+
 
         return new Date(
             value
@@ -541,18 +645,32 @@ function App() {
                     ),
 
                 price:
-                    Number(item.price)
+                    Number(
+                        item.price
+                    )
             })
         );
 
+
+    /*
+    ========================================
+    UI
+    ========================================
+    */
 
     return (
 
         <div
             style={{
-                minHeight: "100vh",
-                background: "#f5f7fb",
-                padding: "30px",
+                minHeight:
+                    "100vh",
+
+                background:
+                    "#f5f7fb",
+
+                padding:
+                    "30px",
+
                 fontFamily:
                     "Arial, sans-serif"
             }}
@@ -560,8 +678,11 @@ function App() {
 
             <div
                 style={{
-                    maxWidth: "1200px",
-                    margin: "0 auto"
+                    maxWidth:
+                        "1200px",
+
+                    margin:
+                        "0 auto"
                 }}
             >
 
@@ -571,9 +692,11 @@ function App() {
                     INE Price Tracker
                 </h1>
 
+
                 <p
                     style={{
-                        color: "#666"
+                        color:
+                            "#666"
                     }}
                 >
                     Search products from the
@@ -582,14 +705,21 @@ function App() {
                 </p>
 
 
-                {/* SEARCH */}
+                {/* SEARCH STORE */}
 
                 <div
                     style={{
-                        background: "white",
-                        padding: "20px",
-                        borderRadius: "10px",
-                        marginBottom: "25px"
+                        background:
+                            "white",
+
+                        padding:
+                            "20px",
+
+                        borderRadius:
+                            "10px",
+
+                        marginBottom:
+                            "25px"
                     }}
                 >
 
@@ -600,36 +730,57 @@ function App() {
 
                     <div
                         style={{
-                            display: "flex",
-                            gap: "10px"
+                            display:
+                                "flex",
+
+                            gap:
+                                "10px"
                         }}
                     >
 
                         <input
-                            value={search}
-                            onChange={event =>
-                                setSearch(
-                                    event.target.value
-                                )
+                            value={
+                                search
                             }
-                            onKeyDown={event => {
 
-                                if (
-                                    event.key ===
-                                    "Enter"
-                                ) {
-                                    searchStore();
+                            onChange={
+                                event =>
+                                    setSearch(
+                                        event.target.value
+                                    )
+                            }
+
+                            onKeyDown={
+                                event => {
+
+                                    if (
+                                        event.key ===
+                                        "Enter"
+                                    ) {
+
+                                        searchStore();
+                                    }
+
                                 }
+                            }
 
-                            }}
-                            placeholder="Search product name..."
+                            placeholder={
+                                "Search product name..."
+                            }
+
                             style={{
-                                flex: 1,
-                                padding: "12px",
+                                flex:
+                                    1,
+
+                                padding:
+                                    "12px",
+
                                 border:
                                     "1px solid #ccc",
+
                                 borderRadius:
                                     "6px",
+
                                 fontSize:
                                     "16px"
                             }}
@@ -640,17 +791,26 @@ function App() {
                             onClick={
                                 searchStore
                             }
-                            disabled={searching}
+
+                            disabled={
+                                searching
+                            }
+
                             style={{
                                 padding:
                                     "12px 20px",
+
                                 cursor:
-                                    "pointer"
+                                    searching
+                                        ? "not-allowed"
+                                        : "pointer"
                             }}
                         >
+
                             {searching
                                 ? "Searching..."
                                 : "Search"}
+
                         </button>
 
                     </div>
@@ -674,105 +834,148 @@ function App() {
 
 
                             {searchResults.map(
-                                product => (
+                                product => {
 
-                                    <div
-                                        key={
-                                            product.id
-                                        }
-                                        style={{
-                                            border:
-                                                "1px solid #ddd",
-                                            padding:
-                                                "15px",
-                                            borderRadius:
-                                                "8px",
-                                            marginBottom:
-                                                "10px",
-                                            display:
-                                                "flex",
-                                            justifyContent:
-                                                "space-between",
-                                            alignItems:
-                                                "center"
-                                        }}
-                                    >
-
-                                        <div>
-
-                                            <strong>
-                                                {
-                                                    product.name
-                                                }
-                                            </strong>
-
-                                            <div
-                                                style={{
-                                                    color:
-                                                        "#666",
-                                                    marginTop:
-                                                        "5px"
-                                                }}
-                                            >
-                                                {
-                                                    product.category
-                                                }
-                                                {" · "}
-                                                SKU:{" "}
-                                                {
-                                                    product.sku
-                                                }
-                                            </div>
-
-                                            <div
-                                                style={{
-                                                    fontSize:
-                                                        "13px",
-                                                    color:
-                                                        "#888"
-                                                }}
-                                            >
-                                                Brand:{" "}
-                                                {
-                                                    product.brand
-                                                }
-                                            </div>
-
-                                        </div>
+                                    const productName =
+                                        getStoreProductName(
+                                            product
+                                        );
 
 
-                                        <button
-                                            onClick={() =>
-                                                trackProduct(
-                                                    product
-                                                )
-                                            }
-                                            disabled={
-                                                tracking ===
+                                    return (
+
+                                        <div
+                                            key={
                                                 product.id
                                             }
+
                                             style={{
+                                                border:
+                                                    "1px solid #ddd",
+
                                                 padding:
-                                                    "9px 15px",
-                                                cursor:
-                                                    "pointer"
+                                                    "15px",
+
+                                                borderRadius:
+                                                    "8px",
+
+                                                marginBottom:
+                                                    "10px",
+
+                                                display:
+                                                    "flex",
+
+                                                justifyContent:
+                                                    "space-between",
+
+                                                alignItems:
+                                                    "center"
                                             }}
                                         >
-                                            {tracking ===
-                                            product.id
-                                                ? "Adding..."
-                                                : "Track Product"}
-                                        </button>
 
-                                    </div>
+                                            <div>
 
-                                )
+                                                <strong>
+                                                    {
+                                                        productName
+                                                    }
+                                                </strong>
+
+
+                                                <div
+                                                    style={{
+                                                        color:
+                                                            "#666",
+
+                                                        marginTop:
+                                                            "5px"
+                                                    }}
+                                                >
+
+                                                    {
+                                                        product.category ||
+                                                        "No category"
+                                                    }
+
+                                                    {" · "}
+
+                                                    SKU:{" "}
+
+                                                    {
+                                                        product.sku ||
+                                                        "N/A"
+                                                    }
+
+                                                </div>
+
+
+                                                <div
+                                                    style={{
+                                                        fontSize:
+                                                            "13px",
+
+                                                        color:
+                                                            "#888",
+
+                                                        marginTop:
+                                                            "4px"
+                                                    }}
+                                                >
+
+                                                    Brand:{" "}
+
+                                                    {
+                                                        product.brand ||
+                                                        "N/A"
+                                                    }
+
+                                                </div>
+
+                                            </div>
+
+
+                                            <button
+                                                onClick={
+                                                    () =>
+                                                        trackProduct(
+                                                            product
+                                                        )
+                                                }
+
+                                                disabled={
+                                                    tracking ===
+                                                    product.id
+                                                }
+
+                                                style={{
+                                                    padding:
+                                                        "9px 15px",
+
+                                                    cursor:
+                                                        tracking ===
+                                                        product.id
+                                                            ? "not-allowed"
+                                                            : "pointer"
+                                                }}
+                                            >
+
+                                                {tracking ===
+                                                product.id
+                                                    ? "Adding..."
+                                                    : "Track Product"}
+
+                                            </button>
+
+                                        </div>
+                                    );
+                                }
                             )}
 
                         </div>
-
                     )}
 
+
+                    {/* NO RESULTS */}
 
                     {search &&
                         !searching &&
@@ -783,6 +986,7 @@ function App() {
                             style={{
                                 color:
                                     "#777",
+
                                 marginTop:
                                     "15px"
                             }}
@@ -802,17 +1006,22 @@ function App() {
                         style={{
                             background:
                                 "#e8f4ff",
+
                             padding:
                                 "12px",
+
                             borderRadius:
                                 "6px",
+
                             marginBottom:
-                                "20px"
+                                "20px",
+
+                            border:
+                                "1px solid #b6ddff"
                         }}
                     >
                         {message}
                     </div>
-
                 )}
 
 
@@ -822,8 +1031,10 @@ function App() {
                     style={{
                         display:
                             "grid",
+
                         gridTemplateColumns:
                             "280px 1fr",
+
                         gap:
                             "25px"
                     }}
@@ -835,10 +1046,13 @@ function App() {
                         style={{
                             background:
                                 "white",
+
                             padding:
                                 "20px",
+
                             borderRadius:
                                 "10px",
+
                             height:
                                 "fit-content"
                         }}
@@ -870,23 +1084,29 @@ function App() {
                                     key={
                                         product.id
                                     }
+
                                     onClick={() =>
                                         selectProduct(
                                             product
                                         )
                                     }
+
                                     style={{
                                         padding:
                                             "12px",
+
                                         marginBottom:
                                             "8px",
+
                                         border:
                                             selectedProduct?.id ===
                                             product.id
                                                 ? "2px solid #333"
                                                 : "1px solid #ddd",
+
                                         borderRadius:
                                             "7px",
+
                                         cursor:
                                             "pointer"
                                     }}
@@ -898,27 +1118,33 @@ function App() {
                                         }
                                     </strong>
 
+
                                     <div
                                         style={{
                                             color:
                                                 "#777",
+
                                             fontSize:
                                                 "13px",
+
                                             marginTop:
                                                 "4px"
                                         }}
                                     >
+
                                         {
                                             product.category
                                         }
+
                                         {" · "}
+
                                         {
                                             product.sku
                                         }
+
                                     </div>
 
                                 </div>
-
                             )
                         )}
 
@@ -935,8 +1161,10 @@ function App() {
                                 style={{
                                     background:
                                         "white",
+
                                     padding:
                                         "30px",
+
                                     borderRadius:
                                         "10px"
                                 }}
@@ -956,10 +1184,13 @@ function App() {
                                     style={{
                                         background:
                                             "white",
+
                                         padding:
                                             "25px",
+
                                         borderRadius:
                                             "10px",
+
                                         marginBottom:
                                             "20px"
                                     }}
@@ -971,15 +1202,19 @@ function App() {
                                         }
                                     </h2>
 
+
                                     <p>
                                         Category:{" "}
+
                                         {
                                             selectedProduct.category
                                         }
                                     </p>
 
+
                                     <p>
                                         SKU:{" "}
+
                                         {
                                             selectedProduct.sku
                                         }
@@ -990,34 +1225,44 @@ function App() {
                                         onClick={
                                             refreshPrice
                                         }
+
                                         disabled={
                                             loading
                                         }
+
                                         style={{
                                             padding:
                                                 "12px 20px",
+
                                             cursor:
-                                                "pointer"
+                                                loading
+                                                    ? "not-allowed"
+                                                    : "pointer"
                                         }}
                                     >
+
                                         {loading
                                             ? "Scraping..."
                                             : "Refresh Price"}
+
                                     </button>
 
                                 </div>
 
 
-                                {/* CURRENT PRICE */}
+                                {/* CURRENT DATA */}
 
                                 <div
                                     style={{
                                         display:
                                             "grid",
+
                                         gridTemplateColumns:
                                             "1fr 1fr",
+
                                         gap:
                                             "20px",
+
                                         marginBottom:
                                             "20px"
                                     }}
@@ -1027,8 +1272,10 @@ function App() {
                                         style={{
                                             background:
                                                 "white",
+
                                             padding:
                                                 "20px",
+
                                             borderRadius:
                                                 "10px"
                                         }}
@@ -1038,21 +1285,27 @@ function App() {
                                             Latest Price
                                         </h3>
 
+
                                         <div
                                             style={{
                                                 fontSize:
                                                     "28px",
+
                                                 fontWeight:
                                                     "bold"
                                             }}
                                         >
+
                                             {latestHistory
+
                                                 ? `₹${Number(
                                                     latestHistory.price
                                                 ).toLocaleString(
                                                     "en-IN"
                                                 )}`
+
                                                 : "No data"}
+
                                         </div>
 
                                     </div>
@@ -1062,8 +1315,10 @@ function App() {
                                         style={{
                                             background:
                                                 "white",
+
                                             padding:
                                                 "20px",
+
                                             borderRadius:
                                                 "10px"
                                         }}
@@ -1073,17 +1328,21 @@ function App() {
                                             Stock
                                         </h3>
 
+
                                         <div
                                             style={{
                                                 fontSize:
                                                     "20px",
+
                                                 fontWeight:
                                                     "bold"
                                             }}
                                         >
+
                                             {latestHistory
                                                 ? latestHistory.stock
                                                 : "No data"}
+
                                         </div>
 
                                     </div>
@@ -1091,16 +1350,19 @@ function App() {
                                 </div>
 
 
-                                {/* CHART */}
+                                {/* PRICE CHART */}
 
                                 <div
                                     style={{
                                         background:
                                             "white",
+
                                         padding:
                                             "20px",
+
                                         borderRadius:
                                             "10px",
+
                                         marginBottom:
                                             "20px"
                                     }}
@@ -1163,16 +1425,19 @@ function App() {
                                 </div>
 
 
-                                {/* HISTORY TABLE */}
+                                {/* PRICE HISTORY */}
 
                                 <div
                                     style={{
                                         background:
                                             "white",
+
                                         padding:
                                             "20px",
+
                                         borderRadius:
                                             "10px",
+
                                         marginBottom:
                                             "20px"
                                     }}
@@ -1187,6 +1452,7 @@ function App() {
                                         style={{
                                             width:
                                                 "100%",
+
                                             borderCollapse:
                                                 "collapse"
                                         }}
@@ -1200,6 +1466,7 @@ function App() {
                                                     style={{
                                                         textAlign:
                                                             "left",
+
                                                         padding:
                                                             "10px"
                                                     }}
@@ -1207,10 +1474,12 @@ function App() {
                                                     Time
                                                 </th>
 
+
                                                 <th
                                                     style={{
                                                         textAlign:
                                                             "left",
+
                                                         padding:
                                                             "10px"
                                                     }}
@@ -1218,10 +1487,12 @@ function App() {
                                                     Price
                                                 </th>
 
+
                                                 <th
                                                     style={{
                                                         textAlign:
                                                             "left",
+
                                                         padding:
                                                             "10px"
                                                     }}
@@ -1249,6 +1520,7 @@ function App() {
                                                             style={{
                                                                 padding:
                                                                     "10px",
+
                                                                 borderTop:
                                                                     "1px solid #eee"
                                                             }}
@@ -1260,26 +1532,32 @@ function App() {
                                                             }
                                                         </td>
 
+
                                                         <td
                                                             style={{
                                                                 padding:
                                                                     "10px",
+
                                                                 borderTop:
                                                                     "1px solid #eee"
                                                             }}
                                                         >
+
                                                             ₹
                                                             {Number(
                                                                 item.price
                                                             ).toLocaleString(
                                                                 "en-IN"
                                                             )}
+
                                                         </td>
+
 
                                                         <td
                                                             style={{
                                                                 padding:
                                                                     "10px",
+
                                                                 borderTop:
                                                                     "1px solid #eee"
                                                             }}
@@ -1290,7 +1568,6 @@ function App() {
                                                         </td>
 
                                                     </tr>
-
                                                 )
                                             )}
 
@@ -1307,8 +1584,10 @@ function App() {
                                     style={{
                                         background:
                                             "white",
+
                                         padding:
                                             "20px",
+
                                         borderRadius:
                                             "10px"
                                     }}
@@ -1323,6 +1602,7 @@ function App() {
                                         style={{
                                             width:
                                                 "100%",
+
                                             borderCollapse:
                                                 "collapse"
                                         }}
@@ -1336,6 +1616,7 @@ function App() {
                                                     style={{
                                                         textAlign:
                                                             "left",
+
                                                         padding:
                                                             "10px"
                                                     }}
@@ -1343,10 +1624,12 @@ function App() {
                                                     Attempt
                                                 </th>
 
+
                                                 <th
                                                     style={{
                                                         textAlign:
                                                             "left",
+
                                                         padding:
                                                             "10px"
                                                     }}
@@ -1354,10 +1637,12 @@ function App() {
                                                     Status
                                                 </th>
 
+
                                                 <th
                                                     style={{
                                                         textAlign:
                                                             "left",
+
                                                         padding:
                                                             "10px"
                                                     }}
@@ -1365,10 +1650,12 @@ function App() {
                                                     Time
                                                 </th>
 
+
                                                 <th
                                                     style={{
                                                         textAlign:
                                                             "left",
+
                                                         padding:
                                                             "10px"
                                                     }}
@@ -1396,6 +1683,7 @@ function App() {
                                                             style={{
                                                                 padding:
                                                                     "10px",
+
                                                                 borderTop:
                                                                     "1px solid #eee"
                                                             }}
@@ -1405,10 +1693,12 @@ function App() {
                                                             }
                                                         </td>
 
+
                                                         <td
                                                             style={{
                                                                 padding:
                                                                     "10px",
+
                                                                 borderTop:
                                                                     "1px solid #eee"
                                                             }}
@@ -1418,10 +1708,12 @@ function App() {
                                                             }
                                                         </td>
 
+
                                                         <td
                                                             style={{
                                                                 padding:
                                                                     "10px",
+
                                                                 borderTop:
                                                                     "1px solid #eee"
                                                             }}
@@ -1433,10 +1725,12 @@ function App() {
                                                             }
                                                         </td>
 
+
                                                         <td
                                                             style={{
                                                                 padding:
                                                                     "10px",
+
                                                                 borderTop:
                                                                     "1px solid #eee"
                                                             }}
@@ -1448,7 +1742,6 @@ function App() {
                                                         </td>
 
                                                     </tr>
-
                                                 )
                                             )}
 
@@ -1471,5 +1764,6 @@ function App() {
         </div>
     );
 }
+
 
 export default App;

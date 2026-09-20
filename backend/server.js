@@ -542,12 +542,69 @@ app.post(
 
 /*
 ========================================
+CRON AUTHENTICATION
+========================================
+*/
+
+function verifyCronSecret(req, res, next) {
+
+    const cronSecret =
+        process.env.CRON_SECRET;
+
+    if (!cronSecret) {
+
+        console.error(
+            "CRON_SECRET is not configured."
+        );
+
+        return res
+            .status(500)
+            .json({
+                success: false,
+                error:
+                    "CRON_SECRET is not configured on the server."
+            });
+    }
+
+
+    const providedSecret =
+        req.get("x-cron-secret");
+
+
+    if (
+        !providedSecret ||
+        providedSecret !== cronSecret
+    ) {
+
+        return res
+            .status(401)
+            .json({
+                success: false,
+                error:
+                    "Unauthorized cron request."
+            });
+    }
+
+
+    next();
+}
+
+
+/*
+========================================
 SCRAPE ALL TRACKED PRODUCTS
 ========================================
+
+This endpoint is protected.
+
+Cron service must send:
+
+x-cron-secret: YOUR_CRON_SECRET
 */
 
 app.post(
     "/api/cron/scrape-all",
+    verifyCronSecret,
     async (req, res) => {
 
         try {

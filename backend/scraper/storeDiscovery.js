@@ -1,261 +1,377 @@
 const { chromium } = require("playwright");
 
-const STORE_URL = "https://demo.inelabteamdev.com/";
-const CATALOG_API =
-    "https://demo.inelabteamdev.com/api/catalog";
+
+const STORE_URL =
+    "https://demo.inelabteamdev.com";
+
 
 function sleep(ms) {
-    return new Promise(resolve =>
-        setTimeout(resolve, ms)
+
+    return new Promise(
+        resolve => setTimeout(resolve, ms)
     );
 }
 
+
+/*
+========================================
+GET ONE CATALOG PAGE
+========================================
+*/
+
 async function getCatalogPage(
-    page,
+    request,
     pageNumber,
     maxAttempts = 5
 ) {
+
     const url =
-        `${CATALOG_API}?page=${pageNumber}&pageSize=20`;
+        `${STORE_URL}/api/catalog?page=${pageNumber}&pageSize=20`;
+
 
     for (
         let attempt = 1;
         attempt <= maxAttempts;
         attempt++
     ) {
+
         try {
+
             console.log(
-                `Fetching catalog page ${pageNumber} (attempt ${attempt}/${maxAttempts})...`
+                `Catalog page ${pageNumber} - attempt ${attempt}/${maxAttempts}`
             );
 
-            const response =
-                await page.request.get(url, {
-                    timeout: 30000
-                });
 
-            if (response.ok()) {
+            const response =
+                await request.get(
+                    url,
+                    {
+                        timeout: 30000
+                    }
+                );
+
+
+            if (
+                response.status() ===
+                200
+            ) {
+
                 const data =
                     await response.json();
 
+
                 if (
-                    !data ||
-                    !Array.isArray(data.items)
+                    data &&
+                    Array.isArray(
+                        data.items
+                    )
                 ) {
-                    throw new Error(
-                        `Invalid catalog response for page ${pageNumber}`
-                    );
+
+                    return data;
                 }
 
-                return data;
+
+                throw new Error(
+                    "Catalog response did not contain an items array."
+                );
             }
 
-            const status =
-                response.status();
 
-            if (status === 429) {
-                let retryAfter = 2;
+            /*
+             * Store can return 429.
+             * Wait and retry.
+             */
+
+            if (
+                response.status() ===
+                429
+            ) {
+
+                let retryAfter =
+                    null;
+
 
                 try {
-                    const body =
+
+                    const errorData =
                         await response.json();
 
-                    if (
-                        body &&
-                        body.retryAfter
-                    ) {
-                        retryAfter =
-                            Number(body.retryAfter);
-                    }
+                    retryAfter =
+                        Number(
+                            errorData.retryAfter
+                        );
+
                 } catch {
-                    // Ignore invalid JSON
+                    /*
+                     * Ignore JSON parsing failure.
+                     */
                 }
 
+
                 const waitTime =
-                    Math.max(
-                        retryAfter * 1000,
-                        2000
-                    ) +
-                    (attempt * 1000);
+                    Number.isFinite(
+                        retryAfter
+                    ) &&
+                    retryAfter > 0
+
+                        ? retryAfter * 1000
+
+                        : 2000 +
+                          attempt * 1000;
+
 
                 console.log(
-                    `Catalog API rate-limited page ${pageNumber}. Waiting ${waitTime} ms before retry...`
+                    `Catalog page ${pageNumber} returned 429. Waiting ${waitTime}ms before retry...`
                 );
 
-                await sleep(waitTime);
+
+                await sleep(
+                    waitTime
+                );
 
                 continue;
             }
 
+
             throw new Error(
-                `Catalog API returned ${status} for page ${pageNumber}`
+                `Catalog request returned HTTP ${response.status()}`
             );
 
         } catch (error) {
+
+            console.error(
+                `Catalog page ${pageNumber} attempt ${attempt} failed:`,
+                error.message
+            );
+
+
             if (
-                attempt === maxAttempts
+                attempt >=
+                maxAttempts
             ) {
+
                 throw error;
             }
 
+
             const waitTime =
-                2000 + attempt * 1000;
+                2000 +
+                attempt * 1000;
+
 
             console.log(
-                `Catalog request failed for page ${pageNumber}: ${error.message}`
+                `Retrying catalog page ${pageNumber} after ${waitTime}ms...`
             );
 
-            console.log(
-                `Waiting ${waitTime} ms before retry...`
-            );
 
-            await sleep(waitTime);
+            await sleep(
+                waitTime
+            );
         }
     }
 
+
     throw new Error(
-        `Unable to fetch catalog page ${pageNumber}`
+        `Unable to load catalog page ${pageNumber}`
     );
 }
+
+
+/*
+========================================
+DISCOVER STORE PRODUCTS
+========================================
+*/
 
 async function discoverStoreProducts(
     search = ""
 ) {
+
+    /*
+     * IMPORTANT:
+     *
+     * ignoreHTTPSErrors allows Playwright
+     * to connect when the store/network
+     * presents a self-signed certificate.
+     */
+
     const browser =
         await chromium.launch({
-            headless: false
+            headless:
+                process.env.HEADLESS !==
+                "false"
         });
 
-    const page =
-        await browser.newPage();
+
+    const context =
+        await browser.newContext({
+            ignoreHTTPSErrors: true
+        });
+
+
+    const request =
+        await context.request;
+
 
     try {
-        console.log(
-            "Opening store..."
-        );
-
-        await page.goto(
-            STORE_URL,
-            {
-                waitUntil:
-                    "domcontentloaded",
-                timeout: 30000
-            }
-        );
-
-        await page.waitForTimeout(
-            1000
-        );
 
         console.log(
-            "Store opened successfully."
+            "Opening INE store catalog..."
         );
+
+
+        /*
+         * First request tells us how many
+         * pages/products exist.
+         */
 
         const firstPage =
             await getCatalogPage(
-                page,
+                request,
                 1
             );
 
-        const totalProducts =
-            firstPage.total;
 
         const totalPages =
-            firstPage.pages;
+            Number(
+                firstPage.pages || 1
+            );
+
+
+        const totalProducts =
+            Number(
+                firstPage.total || 0
+            );
+
 
         console.log(
-            `Store contains ${totalProducts} products across ${totalPages} pages.`
+            `Store catalog: ${totalProducts} products across ${totalPages} pages`
         );
 
-        const products = [];
+
+        const allProducts = [];
+
+
+        /*
+         * Add first page.
+         */
+
+        allProducts.push(
+            ...firstPage.items
+        );
+
+
+        /*
+         * Load remaining pages.
+         */
 
         for (
-            let pageNumber = 1;
+            let pageNumber = 2;
             pageNumber <= totalPages;
             pageNumber++
         ) {
-            let catalogPage;
 
-            if (pageNumber === 1) {
-                catalogPage =
-                    firstPage;
-            } else {
-                /*
-                 * Small delay between normal
-                 * catalog requests.
-                 *
-                 * This prevents the mock store
-                 * from rate-limiting us.
-                 */
-                await sleep(1200);
+            try {
 
-                catalogPage =
+                const pageData =
                     await getCatalogPage(
-                        page,
+                        request,
                         pageNumber
                     );
+
+
+                allProducts.push(
+                    ...pageData.items
+                );
+
+
+                /*
+                 * Small delay so that we
+                 * don't hammer the store.
+                 */
+
+                await sleep(
+                    1200
+                );
+
+            } catch (error) {
+
+                console.error(
+                    `Failed to load catalog page ${pageNumber}:`,
+                    error.message
+                );
+
+
+                /*
+                 * Continue with the pages
+                 * that were successfully loaded.
+                 */
+
+                continue;
             }
-
-            for (
-                const item of
-                catalogPage.items
-            ) {
-                if (
-                    !item ||
-                    !item.id ||
-                    !item.name
-                ) {
-                    continue;
-                }
-
-                products.push({
-                    id: item.id,
-
-                    product_name:
-                        item.name,
-
-                    brand:
-                        item.brand ||
-                        null,
-
-                    category:
-                        item.category ||
-                        null,
-
-                    sku:
-                        item.sku ||
-                        null,
-
-                    product_url:
-                        `${STORE_URL}product/${item.id}`
-                });
-            }
-
-            console.log(
-                `Page ${pageNumber}/${totalPages} loaded. Total collected: ${products.length}`
-            );
         }
 
+
+        /*
+         * Remove duplicate products.
+         */
+
+        const uniqueProducts =
+            Array.from(
+                new Map(
+                    allProducts.map(
+                        product => [
+                            product.id,
+                            product
+                        ]
+                    )
+                ).values()
+            );
+
+
+        /*
+         * Search locally.
+         *
+         * Search checks:
+         * - product name
+         * - brand
+         * - category
+         * - SKU
+         */
+
         const normalizedSearch =
-            search
+            String(
+                search || ""
+            )
                 .trim()
                 .toLowerCase();
 
-        let filteredProducts =
-            products;
 
-        if (normalizedSearch) {
+        let filteredProducts =
+            uniqueProducts;
+
+
+        if (
+            normalizedSearch
+        ) {
+
             filteredProducts =
-                products.filter(
+                uniqueProducts.filter(
                     product => {
-                        const searchableText = [
-                            product.product_name,
-                            product.brand,
-                            product.category,
-                            product.sku
-                        ]
-                            .filter(Boolean)
-                            .join(" ")
-                            .toLowerCase();
+
+                        const searchableText =
+                            [
+                                product.name,
+                                product.brand,
+                                product.category,
+                                product.sku
+                            ]
+                                .filter(
+                                    Boolean
+                                )
+                                .join(" ")
+                                .toLowerCase();
+
 
                         return searchableText.includes(
                             normalizedSearch
@@ -264,59 +380,59 @@ async function discoverStoreProducts(
                 );
         }
 
-        console.log(
-            "\n================================="
-        );
-
-        console.log(
-            `Total products discovered: ${products.length}`
-        );
 
         console.log(
             `Products matching "${search}": ${filteredProducts.length}`
         );
 
-        console.log(
-            "================================="
-        );
 
         return {
-            success: true,
+
+            success:
+                true,
 
             products:
                 filteredProducts,
 
-            totalProducts,
+            totalProducts:
+                totalProducts,
 
-            totalPages
+            totalPages:
+                totalPages
         };
 
     } catch (error) {
-        console.error(
-            "\nStore discovery failed:"
-        );
 
         console.error(
+            "Store discovery failed:",
             error.message
         );
 
+
         return {
-            success: false,
 
-            products: [],
+            success:
+                false,
 
-            totalProducts: 0,
+            products:
+                [],
 
-            totalPages: 0,
+            totalProducts:
+                0,
+
+            totalPages:
+                0,
 
             error:
                 error.message
         };
 
     } finally {
+
         await browser.close();
     }
 }
+
 
 module.exports = {
     discoverStoreProducts
