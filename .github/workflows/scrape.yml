@@ -1,0 +1,21 @@
+name: INE Price Tracker - Scheduled Scrape
+
+on:
+  schedule:
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Render scraper
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body \
+            --max-time 300 \
+            -X POST \
+            -H "x-cron-secret: $CRON_SECRET" \
+            "https://ine-price-tracker-osy9.onrender.com/api/cron/scrape-all"
