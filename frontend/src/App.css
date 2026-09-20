@@ -1,0 +1,394 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f6f8;
+    color: #1f2937;
+}
+
+button,
+input {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+
+/* ================================
+   APP
+================================ */
+
+.app {
+    min-height: 100vh;
+}
+
+
+/* ================================
+   HEADER
+================================ */
+
+.header {
+    background: #111827;
+    color: white;
+    padding: 28px 50px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.header h1 {
+    margin: 0 0 6px;
+    font-size: 30px;
+}
+
+.header p {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 15px;
+}
+
+
+/* ================================
+   MAIN CONTAINER
+================================ */
+
+.container {
+    width: min(1200px, calc(100% - 40px));
+    margin: 30px auto 60px;
+}
+
+
+/* ================================
+   SEARCH
+================================ */
+
+.search-section {
+    background: white;
+    padding: 22px;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    margin-bottom: 25px;
+}
+
+.search-form {
+    display: flex;
+    gap: 12px;
+}
+
+.search-form input {
+    flex: 1;
+    padding: 13px 15px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    outline: none;
+    background: white;
+}
+
+.search-form input:focus {
+    border-color: #2563eb;
+}
+
+.search-form button {
+    padding: 13px 24px;
+    border: none;
+    border-radius: 8px;
+    background: #2563eb;
+    color: white;
+    font-weight: 600;
+}
+
+.search-form button:hover {
+    background: #1d4ed8;
+}
+
+
+/* ================================
+   ERROR
+================================ */
+
+.error {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+    padding: 13px 16px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+
+/* ================================
+   PRODUCTS
+================================ */
+
+.products-section {
+    margin-bottom: 25px;
+}
+
+.products-section h2 {
+    margin-bottom: 15px;
+}
+
+.product-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 15px;
+}
+
+.product-card {
+    text-align: left;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 18px;
+    transition: 0.2s ease;
+}
+
+.product-card:hover {
+    border-color: #2563eb;
+    transform: translateY(-2px);
+}
+
+.product-card.selected {
+    border: 2px solid #2563eb;
+    background: #eff6ff;
+}
+
+.product-card strong {
+    display: block;
+    font-size: 16px;
+    margin-bottom: 8px;
+}
+
+.product-card span {
+    display: block;
+    color: #4b5563;
+    margin-bottom: 6px;
+}
+
+.product-card small {
+    color: #6b7280;
+}
+
+
+/* ================================
+   DASHBOARD
+================================ */
+
+.dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+
+/* ================================
+   PRODUCT HEADER
+================================ */
+
+.product-header {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.product-header h2 {
+    margin: 0 0 7px;
+    font-size: 24px;
+}
+
+.product-header p {
+    margin: 0;
+    color: #6b7280;
+}
+
+.scrape-button {
+    background: #111827;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-weight: 600;
+}
+
+.scrape-button:hover {
+    background: #374151;
+}
+
+.scrape-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+
+/* ================================
+   CURRENT PRICE
+================================ */
+
+.current-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 25px;
+}
+
+.current-card h3 {
+    margin: 0 0 15px;
+    color: #374151;
+}
+
+.price {
+    font-size: 38px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.stock {
+    display: inline-block;
+    background: #dcfce7;
+    color: #166534;
+    padding: 7px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.current-card small {
+    display: block;
+    color: #6b7280;
+}
+
+
+/* ================================
+   PANELS
+================================ */
+
+.panel {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 24px;
+}
+
+.panel h3 {
+    margin-top: 0;
+    margin-bottom: 18px;
+    font-size: 19px;
+}
+
+
+/* ================================
+   TABLES
+================================ */
+
+.table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 650px;
+}
+
+th {
+    background: #f8fafc;
+    color: #374151;
+    font-size: 14px;
+    text-align: left;
+    padding: 13px 14px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+td {
+    padding: 13px 14px;
+    border-bottom: 1px solid #eef0f2;
+    font-size: 14px;
+}
+
+tbody tr:hover {
+    background: #f9fafb;
+}
+
+
+/* ================================
+   STATUS
+================================ */
+
+.status {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: capitalize;
+}
+
+.status.success {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status.retried {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status.failed {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+
+/* ================================
+   RESPONSIVE
+================================ */
+
+@media (max-width: 700px) {
+
+    .header {
+        padding: 22px 20px;
+    }
+
+    .container {
+        width: calc(100% - 24px);
+        margin-top: 20px;
+    }
+
+    .search-form {
+        flex-direction: column;
+    }
+
+    .search-form button {
+        width: 100%;
+    }
+
+    .product-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .scrape-button {
+        width: 100%;
+    }
+
+    .price {
+        font-size: 32px;
+    }
+
+    .panel,
+    .current-card,
+    .product-header,
+    .search-section {
+        padding: 18px;
+    }
+}
